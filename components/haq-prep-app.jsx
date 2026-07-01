@@ -1979,6 +1979,12 @@ export default function App() {
     return () => clearInterval(totalRef.current);
   }, [screen]);
 
+  // A question counts as "resolved" only once it has been actually answered
+  // (selected !== null). A skipped entry is deliberately left unresolved so
+  // it can be revisited in a later round, exam-style.
+  const isAnswered = qid => { const a=ans[qid]; return !!a && a.selected!==null; };
+  const findUnresolved = excludeId => qs.findIndex(qq => qq.id!==excludeId && !isAnswered(qq.id));
+
   const doSelect = idx => {
     if (revealed) return;
     clearInterval(timerRef.current);
@@ -1988,12 +1994,50 @@ export default function App() {
   const doSkip = () => {
     if (revealed) return;
     clearInterval(timerRef.current);
-    setAns(p=>({...p,[qs[cur].id]:{selected:null,correct:false,skipped:true}}));
-    setRevealed(true);
+    const id = qs[cur].id;
+    setAns(p=>({...p,[id]:{selected:null,correct:false,skipped:true}}));
+    // Skip just moves on — it never reveals the answer.
+    const n = cur+1;
+    if (n<qs.length) {
+      setCur(n);
+      setRevealed(isAnswered(qs[n]?.id));
+      if (!isAnswered(qs[n]?.id)) setTLeft(timerSec);
+    } else {
+      // Reached the end — loop back to the earliest unresolved question
+      // (skipped or untouched) so skipped questions can be attempted later.
+      const idx = findUnresolved(id);
+      if (idx!==-1) { setCur(idx); setRevealed(false); setTLeft(timerSec); }
+      else handleFinishClick();
+    }
   };
-  const goTo = idx => { setCur(idx); setRevealed(!!ans[qs[idx]?.id]); if(!ans[qs[idx]?.id]) setTLeft(timerSec); setShowPal(false); };
-  const doNext = () => { const n=cur+1; if(n<qs.length){setCur(n);setRevealed(!!ans[qs[n]?.id]);if(!ans[qs[n]?.id])setTLeft(timerSec);}else finish(ans,bk); };
-  const doPrev = () => { const p=cur-1; if(p>=0){setCur(p);setRevealed(!!ans[qs[p]?.id]);if(!ans[qs[p]?.id])setTLeft(timerSec);} };
+  const goTo = idx => {
+    setCur(idx);
+    setRevealed(isAnswered(qs[idx]?.id));
+    if (!isAnswered(qs[idx]?.id)) setTLeft(timerSec);
+    setShowPal(false);
+  };
+  const doNext = () => {
+    const n=cur+1;
+    if(n<qs.length){
+      setCur(n);
+      setRevealed(isAnswered(qs[n]?.id));
+      if(!isAnswered(qs[n]?.id)) setTLeft(timerSec);
+    } else {
+      // Reached the end — if skipped/unanswered questions remain, go attempt
+      // them instead of forcing a finish. Explicit Submit still overrides.
+      const idx = findUnresolved(null);
+      if (idx!==-1) { setCur(idx); setRevealed(false); setTLeft(timerSec); }
+      else handleFinishClick();
+    }
+  };
+  const doPrev = () => {
+    const p=cur-1;
+    if(p>=0){
+      setCur(p);
+      setRevealed(isAnswered(qs[p]?.id));
+      if(!isAnswered(qs[p]?.id)) setTLeft(timerSec);
+    }
+  };
 
   const correct   = Object.values(ans).filter(a=>a.correct).length;
   const wrong     = Object.values(ans).filter(a=>!a.correct&&!a.skipped&&a.selected!==null).length;
@@ -2003,7 +2047,7 @@ export default function App() {
   const maxMarks  = qs.length*MARKS_CORRECT;
   const acc       = attempted>0?Math.round(correct/attempted*100):0;
   const qStat     = q => { if(bk[q.id]) return "bookmarked"; const a=ans[q.id]; if(!a) return "unattempted"; if(a.skipped) return "skipped"; return a.correct?"correct":"wrong"; };
-  const unattemptedCount = qs.length - Object.keys(ans).length;
+  const unattemptedCount = qs.filter(qq=>!isAnswered(qq.id)).length;
   const sets = Object.entries(lib||{});
   // A set only counts as "in a folder" if that folder still exists — guards against stale folderId data.
   const isInFolder = (set) => !!(set.folderId && (folders||{})[set.folderId]);
@@ -2641,7 +2685,7 @@ export default function App() {
   const tPct = timerOn?(tLeft/timerSec)*100:100;
   const tClr = tLeft>timerSec*0.33?"#4ade80":tLeft>timerSec*0.11?"#fbbf24":"#f87171";
   const isLast = cur===qs.length-1;
-  const handleFinishClick = () => { const unatt=qs.filter(qq=>!ans[qq.id]).length; if(unatt>0) setShowFinish(true); else finish(ans,bk); };
+  const handleFinishClick = () => { const unatt=qs.filter(qq=>!isAnswered(qq.id)).length; if(unatt>0) setShowFinish(true); else finish(ans,bk); };
 
   return (
     <div style={bg}>
@@ -2662,7 +2706,7 @@ export default function App() {
           <div style={{background:"#161b22",borderRadius:16,padding:24,maxWidth:300,width:"90%",border:"1px solid #fbbf2466",textAlign:"center"}}>
             <div style={{fontSize:32,marginBottom:8}}>⚠️</div>
             <div style={{color:"#f1f5f9",fontSize:15,fontWeight:700,marginBottom:8}}>Submit Quiz?</div>
-            <p style={{color:"#fbbf24",fontSize:13,marginBottom:18}}>{unattemptedCount} question{unattemptedCount!==1?"s":""} unattempted. Submit anyway?</p>
+            <p style={{color:"#fbbf24",fontSize:13,marginBottom:18}}>{unattemptedCount} question{unattemptedCount!==1?"s":""} still skipped/unattempted. Submit anyway?</p>
             <div style={{display:"flex",gap:10}}>
               <button onClick={()=>setShowFinish(false)} style={{flex:1,background:"#161b22",color:"#f1f5f9",border:"none",borderRadius:10,padding:11,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>Go Back</button>
               <button onClick={()=>{setShowFinish(false);finish(ans,bk);}} style={{flex:1,background:"#fbbf24",color:"#0f172a",border:"none",borderRadius:10,padding:11,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Submit</button>
@@ -2696,7 +2740,7 @@ export default function App() {
           <div style={{display:"flex",gap:5}}>
             <button onClick={()=>setShowPal(true)} style={{background:"#161b22",color:"#94a3b8",border:"1px solid #21262d",borderRadius:8,padding:"5px 9px",fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>⊞ {cur+1}/{qs.length}</button>
             <button onClick={()=>setShowRst(true)} style={{background:"#161b22",color:"#f87171",border:"1px solid #21262d",borderRadius:8,padding:"5px 9px",fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>↺</button>
-            <button onClick={handleFinishClick} style={{background:"#161b22",color:"#fbbf24",border:"1px solid #21262d",borderRadius:8,padding:"5px 9px",fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>🏁</button>
+            <button onClick={handleFinishClick} style={{background:"#161b22",color:"#fbbf24",border:"1px solid #fbbf2466",borderRadius:8,padding:"5px 10px",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",gap:4}}>🏁 Submit</button>
           </div>
           <div style={{textAlign:"center"}}>
             <div style={{color:"#64748b",fontSize:9,letterSpacing:1}}>ELAPSED</div>
