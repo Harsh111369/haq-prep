@@ -1283,6 +1283,84 @@ function AnalyticsScreen({ analytics, lib, onBack, onReset }) {
 }
 
 // ════════════════════════════════════════════════════════════════════════════════
+// SETTINGS / ACCOUNT SCREEN
+// ════════════════════════════════════════════════════════════════════════════════
+const APP_VERSION = "1.0.0";
+
+function SettingsScreen({ user, isCloud, setCount, onBack, onOpenBackup, onSignOut, onDeleteAll }) {
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const card = { background:"#161b22", borderRadius:14, padding:16, border:"1px solid #21262d", marginBottom:12 };
+
+  return (
+    <div style={{fontFamily:"'Segoe UI',sans-serif",minHeight:"100vh",background:"#0d1117",color:"#f1f5f9",padding:16,paddingBottom:32}}>
+      {confirmDelete && (
+        <div style={{position:"fixed",inset:0,background:"#000000bb",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+          <div style={{background:"#161b22",borderRadius:16,padding:24,maxWidth:320,width:"100%",border:"1px solid #21262d",textAlign:"center"}}>
+            <div style={{fontSize:32,marginBottom:8}}>⚠️</div>
+            <div style={{color:"#f1f5f9",fontSize:15,fontWeight:700,marginBottom:8}}>Delete ALL your data?</div>
+            <p style={{color:"#94a3b8",fontSize:13,marginBottom:20}}>This permanently deletes every set, session, bookmark and review record{isCloud?" — locally and in the cloud":""}. This cannot be undone.</p>
+            <div style={{display:"flex",gap:10}}>
+              <button onClick={()=>setConfirmDelete(false)} style={{flex:1,background:"#161b22",color:"#f1f5f9",border:"none",borderRadius:10,padding:11,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>Cancel</button>
+              <button disabled={deleting} onClick={async()=>{setDeleting(true); await onDeleteAll(); setDeleting(false); setConfirmDelete(false);}} style={{flex:1,background:"#f87171",color:"#0f172a",border:"none",borderRadius:10,padding:11,fontSize:13,fontWeight:700,cursor:deleting?"not-allowed":"pointer",fontFamily:"inherit",opacity:deleting?0.7:1}}>{deleting?"Deleting…":"Delete Everything"}</button>
+            </div>
+          </div>
+        </div>
+      )}
+      <div style={{maxWidth:600,margin:"0 auto"}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:24,paddingTop:8}}>
+          <h1 style={{fontSize:20,margin:0}}>⚙️ Settings</h1>
+          <button onClick={onBack} style={{display:"inline-flex",alignItems:"center",gap:7,background:"#161b22",border:"1px solid #21262d",borderRadius:10,padding:"8px 14px 8px 10px",cursor:"pointer",fontFamily:"inherit"}}>
+            <div style={{width:20,height:20,borderRadius:6,background:"#0d1117",display:"flex",alignItems:"center",justifyContent:"center",color:"#64748b",fontSize:14,lineHeight:1}}>‹</div>
+            <span style={{color:"#64748b",fontSize:12,fontWeight:600}}>Back</span>
+          </button>
+        </div>
+
+        {/* Account card */}
+        <div style={card}>
+          <div style={{color:"#64748b",fontSize:11,fontWeight:700,marginBottom:12,letterSpacing:"0.5px"}}>ACCOUNT</div>
+          {isCloud && user ? (
+            <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:14}}>
+              <img src={user.photoURL||""} alt="" style={{width:44,height:44,borderRadius:"50%",background:"#334155",flexShrink:0}} onError={e=>{e.target.style.display="none";}}/>
+              <div style={{minWidth:0}}>
+                <div style={{color:"#f1f5f9",fontSize:15,fontWeight:700,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{user.displayName||"Signed in"}</div>
+                <div style={{color:"#64748b",fontSize:12,marginTop:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{user.email||""}</div>
+                <div style={{color:"#4ade80",fontSize:11,marginTop:3}}>☁️ Cloud sync active</div>
+              </div>
+            </div>
+          ) : (
+            <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:14}}>
+              <div style={{width:44,height:44,borderRadius:"50%",background:"#0f2d2a",display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,flexShrink:0}}>👤</div>
+              <div>
+                <div style={{color:"#f1f5f9",fontSize:15,fontWeight:700}}>Guest Mode</div>
+                <div style={{color:"#64748b",fontSize:12,marginTop:1}}>{setCount} set{setCount!==1?"s":""} stored on this device only</div>
+              </div>
+            </div>
+          )}
+          <button onClick={onSignOut} style={{width:"100%",background:"#0d1117",color:"#f87171",border:"1px solid #f8717130",borderRadius:10,padding:12,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>🚪 Sign Out</button>
+        </div>
+
+        {/* Backup card */}
+        <div style={card}>
+          <div style={{color:"#64748b",fontSize:11,fontWeight:700,marginBottom:8,letterSpacing:"0.5px"}}>DATA</div>
+          <div style={{color:"#94a3b8",fontSize:12,lineHeight:1.6,marginBottom:12}}>Export a backup of your library, or restore one you saved earlier.</div>
+          <button onClick={onOpenBackup} style={{width:"100%",background:"linear-gradient(90deg,#0d9488,#2dd4bf)",color:"#0f172a",border:"none",borderRadius:10,padding:12,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit",marginBottom:10}}>🗄️ Backup & Restore</button>
+          <button onClick={()=>setConfirmDelete(true)} style={{width:"100%",background:"#2d0a0a",color:"#f87171",border:"1px solid #f8717130",borderRadius:10,padding:12,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>🗑️ Delete My Data</button>
+        </div>
+
+        {/* Free forever notice */}
+        <div style={{...card, background:"#0d2a1f", border:"1px solid #166534"}}>
+          <div style={{color:"#4ade80",fontSize:12,fontWeight:700,marginBottom:4}}>💚 Free, forever</div>
+          <div style={{color:"#94a3b8",fontSize:12,lineHeight:1.6}}>HAQ PREP is free to use with no payment or subscription required, and there are no plans to charge for any existing features.</div>
+        </div>
+
+        <div style={{textAlign:"center",color:"#475569",fontSize:11,marginTop:8}}>HAQ PREP · v{APP_VERSION}</div>
+      </div>
+    </div>
+  );
+}
+
+// ════════════════════════════════════════════════════════════════════════════════
 // MAIN APP
 // ════════════════════════════════════════════════════════════════════════════════
 export default function App() {
@@ -1309,6 +1387,9 @@ export default function App() {
   const [exportSet, setExportSet]     = useState(null);
   const [pendingImport, setPendingImport] = useState(null); // set decoded from a #import= share link
   const [showBackup, setShowBackup]   = useState(false);
+  const [usageDismissedAt, setUsageDismissedAt] = useState(() => {
+    try { return parseInt(localStorage.getItem("haq_usage_dismissed")||"0",10); } catch { return 0; }
+  });
   const [focusSort, setFocusSort]     = useState(false); // false=date order, true=grade worst-first
   const [activeFolderKey, setActiveFolderKey] = useState(null); // folder currently open (screen === "folder")
   const [showNewFolder, setShowNewFolder]     = useState(false);
@@ -1428,7 +1509,7 @@ export default function App() {
   // ── Android hardware back button (History API) ──────────────────────────────
   // Maps each in-app screen to the screen the back button should return to.
   // Screens not listed here (e.g. "library") are treated as the app root.
-  const BACK_PARENT = { home: "library", analytics: "library", quiz: "library", result: "library", review: "result", folder: "library" };
+  const BACK_PARENT = { home: "library", analytics: "library", settings: "library", quiz: "library", result: "library", review: "result", folder: "library" };
 
   // Seed a base history entry on mount so the first back press is captured.
   useEffect(() => {
@@ -1760,6 +1841,30 @@ export default function App() {
     showToast(`✏️ Renamed to "${newTitle}"`);
   };
 
+  // Full account data wipe — clears local storage AND, if signed in, every
+  // Firestore doc for this user across all collections. Used by the
+  // Settings screen's "Delete my data" action.
+  const handleDeleteAllData = async () => {
+    if (isCloud && user) {
+      try {
+        const [libData, revData, srsData, foldersData] = await Promise.all([
+          cloudGet(user.uid, "library"), cloudGet(user.uid, "revision"), cloudGet(user.uid, "srs"), cloudGet(user.uid, "folders"),
+        ]);
+        await Promise.all([
+          ...Object.keys(libData||{}).map(k => cloudDelete(user.uid, "library", k)),
+          ...Object.keys(revData||{}).map(k => cloudDelete(user.uid, "revision", k)),
+          ...Object.keys(srsData||{}).map(k => cloudDelete(user.uid, "srs", k)),
+          ...Object.keys(foldersData||{}).map(k => cloudDelete(user.uid, "folders", k)),
+          cloudDelete(user.uid, "analytics", "main"),
+        ]);
+      } catch { showToast("⚠️ Some cloud data may not have been deleted — check your connection."); }
+    }
+    saveS(LIB_KEY, {}); saveS(REV_KEY, {}); saveS(ANALYTICS_KEY, {}); saveS(SRS_KEY, {}); saveS(FOLDERS_KEY, {});
+    setLib({}); setRev({}); setSrs({}); setFolders({}); setAnalytics({sessions:[],totalAttempted:0,totalCorrect:0,totalWrong:0,totalSkipped:0});
+    setScreen("library");
+    showToast("🗑️ All your data has been deleted");
+  };
+
   // ── Folders ──────────────────────────────────────────────────────────────
   const handleCreateFolder = async (name) => {
     const k = `f_${Date.now()}`;
@@ -1990,6 +2095,21 @@ export default function App() {
       onReset={()=>{ const empty={sessions:[],totalAttempted:0,totalCorrect:0,totalWrong:0,totalSkipped:0}; persistAnalytics(empty); showToast("🗑 Analytics reset"); setScreen("library"); }}/>
   );
 
+  // ── Settings ───────────────────────────────────────────────────────────────
+  if (screen === "settings") return (
+    <>
+      {showBackup && <BackupModal lib={lib} rev={rev} analytics={analytics} srs={srs} folders={folders} isCloud={isCloud} user={user}
+        onRestoreComplete={(merged)=>{
+          setLib(merged.library); setRev(merged.revision); setAnalytics(merged.analytics); setSrs(merged.srs); setFolders(merged.folders||{});
+          showToast("✅ Library restored!");
+        }}
+        onClose={()=>setShowBackup(false)}/>}
+      {toast && <div style={{position:"fixed",top:16,left:"50%",transform:"translateX(-50%)",background:"#0d2a1f",border:"1px solid #166534",borderRadius:10,padding:"10px 18px",color:"#4ade80",fontSize:13,zIndex:300,whiteSpace:"nowrap",boxShadow:"0 4px 20px #00000060"}}>{toast}</div>}
+      <SettingsScreen user={user} isCloud={isCloud} setCount={sets.length} onBack={()=>setScreen("library")}
+        onOpenBackup={()=>setShowBackup(true)} onSignOut={handleSignOut} onDeleteAll={handleDeleteAllData}/>
+    </>
+  );
+
   // ── Library ──────────────────────────────────────────────────────────────────
   if (screen === "library") {
     const streak = calcStreak(analytics?.sessions||[]);
@@ -2039,6 +2159,24 @@ export default function App() {
         {toast && <div style={{position:"fixed",top:16,left:"50%",transform:"translateX(-50%)",background:"#0d2a1f",border:"1px solid #166534",borderRadius:10,padding:"10px 18px",color:"#4ade80",fontSize:13,zIndex:300,whiteSpace:"nowrap",boxShadow:"0 4px 20px #00000060"}}>{toast}</div>}
 
         <div style={{maxWidth:580,margin:"0 auto"}}>
+          {/* Usage guidance — soft, informational only. No feature is ever blocked. */}
+          {(() => {
+            const totalQuestions = sets.reduce((t,[,set])=>t+(set.questions?.length||set.count||0),0);
+            const maxSetSize = sets.reduce((m,[,set])=>Math.max(m,(set.questions?.length||set.count||0)),0);
+            const flagged = totalQuestions > 2000 || maxSetSize > 500;
+            if (!flagged || totalQuestions <= usageDismissedAt) return null;
+            return (
+              <div style={{background:"#1a1508",border:"1px solid #78530f",borderRadius:12,padding:"12px 14px",marginBottom:12,display:"flex",gap:10,alignItems:"flex-start"}}>
+                <span style={{fontSize:18,flexShrink:0}}>💡</span>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{color:"#fbbf24",fontSize:12,fontWeight:700,marginBottom:2}}>Your library is getting big</div>
+                  <div style={{color:"#94a3b8",fontSize:11,lineHeight:1.5}}>{totalQuestions.toLocaleString()} questions across your sets — everything still works, but performance may be smoother if you split very large sets or archive ones you've mastered. This is just a heads-up, not a limit.</div>
+                </div>
+                <button onClick={()=>{ try{localStorage.setItem("haq_usage_dismissed", String(totalQuestions));}catch{}; setUsageDismissedAt(totalQuestions); }} style={{background:"none",border:"none",color:"#78530f",fontSize:16,cursor:"pointer",padding:0,lineHeight:1,flexShrink:0}}>✕</button>
+              </div>
+            );
+          })()}
+
           {/* Auth banners */}
           {authMode==="guest" && <GuestBanner setCount={sets.length} onBackup={()=>setShowBackup(true)} onSignIn={handleSwitchToCloud}/>}
 
@@ -2067,6 +2205,9 @@ export default function App() {
               </button>
               <button onClick={()=>setScreen("analytics")} style={{background:"#161b22",border:"1px solid #21262d",borderRadius:12,padding:"10px 14px",color:"#a78bfa",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit",display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
                 <span style={{fontSize:18}}>📊</span><span style={{fontSize:10}}>Analytics</span>
+              </button>
+              <button onClick={()=>setScreen("settings")} style={{background:"#161b22",border:"1px solid #21262d",borderRadius:12,padding:"10px 14px",color:"#94a3b8",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit",display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
+                <span style={{fontSize:18}}>⚙️</span><span style={{fontSize:10}}>Settings</span>
               </button>
             </div>
           </div>
@@ -2134,11 +2275,30 @@ export default function App() {
           )}
 
           {sets.length === 0 && (
-            <div style={{background:"#161b22",borderRadius:16,padding:40,border:"1px solid #21262d",textAlign:"center"}}>
-              <div style={{fontSize:48,marginBottom:12}}>🧠</div>
-              <h2 style={{fontSize:18,margin:"0 0 8px"}}>No sets yet</h2>
-              <p style={{color:"#64748b",fontSize:13,margin:"0 0 20px"}}>Paste MCQ JSON to get started.</p>
-              <button onClick={()=>setShowJson(true)} style={{background:"linear-gradient(90deg,#0d9488,#2dd4bf)",color:"#0f172a",border:"none",borderRadius:10,padding:"12px 20px",fontSize:14,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>📋 Paste JSON</button>
+            <div style={{background:"#161b22",borderRadius:16,padding:"28px 24px",border:"1px solid #21262d",marginBottom:12}}>
+              <div style={{textAlign:"center",marginBottom:20}}>
+                <div style={{fontSize:44,marginBottom:10}}>🧠</div>
+                <h2 style={{fontSize:18,margin:"0 0 6px"}}>Welcome to HAQ PREP</h2>
+                <p style={{color:"#64748b",fontSize:13,margin:0}}>Turn your notes into a practice quiz in 3 steps</p>
+              </div>
+              <div style={{display:"flex",flexDirection:"column",gap:10,marginBottom:20}}>
+                <div style={{display:"flex",gap:10,alignItems:"flex-start"}}>
+                  <div style={{width:22,height:22,borderRadius:"50%",background:"#0f2d2a",color:"#2dd4bf",fontSize:11,fontWeight:800,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,marginTop:1}}>1</div>
+                  <div style={{color:"#94a3b8",fontSize:12,lineHeight:1.5}}>Ask an AI (like Claude) to generate MCQs from your notes/PDF as JSON.</div>
+                </div>
+                <div style={{display:"flex",gap:10,alignItems:"flex-start"}}>
+                  <div style={{width:22,height:22,borderRadius:"50%",background:"#0f2d2a",color:"#2dd4bf",fontSize:11,fontWeight:800,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,marginTop:1}}>2</div>
+                  <div style={{color:"#94a3b8",fontSize:12,lineHeight:1.5}}>Paste that JSON here to import it into your library.</div>
+                </div>
+                <div style={{display:"flex",gap:10,alignItems:"flex-start"}}>
+                  <div style={{width:22,height:22,borderRadius:"50%",background:"#0f2d2a",color:"#2dd4bf",fontSize:11,fontWeight:800,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,marginTop:1}}>3</div>
+                  <div style={{color:"#94a3b8",fontSize:12,lineHeight:1.5}}>Start practicing — timers, scoring, bookmarks & SRS review, all offline.</div>
+                </div>
+              </div>
+              <div style={{display:"flex",gap:8}}>
+                <button onClick={()=>setShowJson(true)} style={{flex:1,background:"linear-gradient(90deg,#0d9488,#2dd4bf)",color:"#0f172a",border:"none",borderRadius:10,padding:"12px 16px",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>📋 Paste JSON</button>
+                <button onClick={()=>setAppScreen("about")} style={{flex:1,background:"#0d1117",color:"#94a3b8",border:"1px solid #21262d",borderRadius:10,padding:"12px 16px",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>📖 Full Guide</button>
+              </div>
             </div>
           )}
 
