@@ -584,7 +584,7 @@ function SplashScreen({ user, onGoogle, onGuest, onContinue, onSignOut, loading,
             🔧 Firebase not set up — Google sign-in unavailable. Guest mode works fine.
           </div>
         )}
-        <div style={{color:"#334155",fontSize:11,textAlign:"center",marginTop:4}}>No account needed · works offline</div>
+        <div style={{color:"#334155",fontSize:11,textAlign:"center",marginTop:4}}>No account needed</div>
       </div>
 
       {/* Footer */}
