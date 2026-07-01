@@ -53,6 +53,7 @@ const MARKS_CORRECT = 4, MARKS_WRONG = -1, TIMER_DEFAULT = 90;
 const PAL = ["#4ade80","#60a5fa","#f472b6","#fb923c","#a78bfa","#34d399","#fbbf24","#f87171","#38bdf8","#c084fc"];
 const STAT_COLORS = { unattempted:"#334155", correct:"#4ade80", wrong:"#f87171", skipped:"#fbbf24", bookmarked:"#a78bfa" };
 const LIB_KEY = "ha-cbt-lib-v1", REV_KEY = "ha-cbt-rev-v1", ANALYTICS_KEY = "ha-cbt-analytics-v1", SRS_KEY = "ha-cbt-srs-v1";
+const FOLDERS_KEY = "ha-cbt-folders-v1";
 const GUEST_KEY = "ha-cbt-guest-mode"; // flag: "guest" | "cloud"
 
 // ── SRS Intervals (days) — SM-2 simplified ───────────────────────────────────
@@ -810,7 +811,7 @@ function ExportModal({ set, onClose }) {
 }
 
 // ── Backup Modal ──────────────────────────────────────────────────────────────
-function BackupModal({ lib, rev, analytics, srs, isCloud, user, onRestoreComplete, onClose }) {
+function BackupModal({ lib, rev, analytics, srs, folders, isCloud, user, onRestoreComplete, onClose }) {
   const [tab, setTab] = useState("export");
   const [restoreStatus, setRestoreStatus] = useState("");
   const [restoreMsg, setRestoreMsg] = useState("");
@@ -821,7 +822,7 @@ function BackupModal({ lib, rev, analytics, srs, isCloud, user, onRestoreComplet
   const fileRef = useRef();
 
   const doExport = () => {
-    const backup = { backup_version: 2, app: "HAQ PREP", exported_at: new Date().toISOString().slice(0,10), sets_count: Object.keys(lib||{}).length, library: lib||{}, revision: rev||{}, analytics: analytics||{}, srs: srs||{} };
+    const backup = { backup_version: 2, app: "HAQ PREP", exported_at: new Date().toISOString().slice(0,10), sets_count: Object.keys(lib||{}).length, library: lib||{}, revision: rev||{}, analytics: analytics||{}, srs: srs||{}, folders: folders||{} };
     const blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a"); a.href = url; a.download = `haqprep-backup-${new Date().toISOString().slice(0,10)}.json`;
@@ -852,6 +853,7 @@ function BackupModal({ lib, rev, analytics, srs, isCloud, user, onRestoreComplet
       const mergedRev       = { ...(rev||{}),        ...(pendingData.revision||{}) };
       const mergedSrs       = { ...(srs||{}),        ...(pendingData.srs||{})      };
       const mergedAnalytics = { ...(analytics||{}),  ...(pendingData.analytics||{})};
+      const mergedFolders   = { ...(folders||{}),    ...(pendingData.folders||{})  };
 
       if (isCloud && user) {
         // Cloud mode: push merged data straight to Firestore so it survives logout/login
@@ -859,15 +861,16 @@ function BackupModal({ lib, rev, analytics, srs, isCloud, user, onRestoreComplet
           ...Object.entries(mergedLib).map(([k, v]) => cloudSave(user.uid, "library", k, v)),
           ...Object.entries(mergedRev).map(([k, v]) => cloudSave(user.uid, "revision", k, v)),
           ...Object.entries(mergedSrs).map(([k, v]) => cloudSave(user.uid, "srs", k, v)),
+          ...Object.entries(mergedFolders).map(([k, v]) => cloudSave(user.uid, "folders", k, v)),
           cloudSave(user.uid, "analytics", "main", mergedAnalytics),
         ]);
       } else {
         // Guest mode: localStorage is the source of truth
-        saveS(LIB_KEY, mergedLib); saveS(REV_KEY, mergedRev); saveS(ANALYTICS_KEY, mergedAnalytics); saveS(SRS_KEY, mergedSrs);
+        saveS(LIB_KEY, mergedLib); saveS(REV_KEY, mergedRev); saveS(ANALYTICS_KEY, mergedAnalytics); saveS(SRS_KEY, mergedSrs); saveS(FOLDERS_KEY, mergedFolders);
       }
 
       setRestoreStatus("success"); setRestoreMsg(`✅ Restored ${restorePreview.setsCount} sets. Reloading…`);
-      setTimeout(() => { onRestoreComplete({ library: mergedLib, revision: mergedRev, analytics: mergedAnalytics, srs: mergedSrs }); onClose(); }, 1800);
+      setTimeout(() => { onRestoreComplete({ library: mergedLib, revision: mergedRev, analytics: mergedAnalytics, srs: mergedSrs, folders: mergedFolders }); onClose(); }, 1800);
     } catch {
       setRestoreStatus("error"); setRestoreMsg(isCloud ? "Restore failed. Check your connection and try again." : "Restore failed. Storage may be full.");
     } finally {
@@ -985,12 +988,14 @@ function ImportLinkModal({ data, onImport, onCancel }) {
 }
 
 // ── JSON Import Modal ─────────────────────────────────────────────────────────
-function JsonModal({ onSave, onClose }) {
+function JsonModal({ onSave, onClose, folders, defaultFolderId }) {
   const [tab, setTab] = useState("json");
   const [json, setJson] = useState("");
   const [code, setCode] = useState("");
   const [err, setErr] = useState("");
+  const [folderId, setFolderId] = useState(defaultFolderId || "");
   const nameRef = useRef();
+  const folderList = Object.entries(folders||{});
 
   const doSaveJson = () => {
     setErr("");
@@ -1003,7 +1008,7 @@ function JsonModal({ onSave, onClose }) {
       else if(p&&p.questions){ qs=p.questions; title=nameRef.current?.value.trim()||p.title||"Untitled"; }
       else throw new Error("Expected array or {questions:[...]}");
       if(!qs.length) throw new Error("No questions found");
-      onSave({ title, questions: qs.map((q,i)=>norm(q,i)), savedAt: Date.now(), count: qs.length });
+      onSave({ title, questions: qs.map((q,i)=>norm(q,i)), savedAt: Date.now(), count: qs.length, folderId: folderId||null });
     } catch(e) { setErr(e.message); }
   };
 
@@ -1012,8 +1017,18 @@ function JsonModal({ onSave, onClose }) {
     const decoded = decodeSet(code);
     if (!decoded) { setErr("Invalid share code."); return; }
     if (!decoded.questions?.length) { setErr("No questions found in this code."); return; }
-    onSave({ title: decoded.title||"Imported Set", questions: decoded.questions, savedAt: Date.now(), count: decoded.questions.length });
+    onSave({ title: decoded.title||"Imported Set", questions: decoded.questions, savedAt: Date.now(), count: decoded.questions.length, folderId: folderId||null });
   };
+
+  const folderPicker = (
+    <div style={{marginBottom:12}}>
+      <label style={{display:"block",color:"#64748b",fontSize:11,fontWeight:600,marginBottom:6}}>Save to folder</label>
+      <select value={folderId} onChange={e=>setFolderId(e.target.value)} style={{width:"100%",background:"#0d1117",border:"1px solid #21262d",borderRadius:10,padding:"10px 12px",color:"#f1f5f9",fontSize:13,fontFamily:"inherit",boxSizing:"border-box",outline:"none"}}>
+        <option value="">📄 Unfiled</option>
+        {folderList.map(([fkey,folder]) => <option key={fkey} value={fkey}>📁 {folder.name}</option>)}
+      </select>
+    </div>
+  );
 
   const tabBtn = (id, label) => (
     <button onClick={()=>{setTab(id);setErr("");}} style={{flex:1,padding:"9px 0",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit",border:"none",borderRadius:8,background:tab===id?"#4ade80":"#0f2d2a",color:tab===id?"#0f172a":"#64748b"}}>{label}</button>
@@ -1032,6 +1047,7 @@ function JsonModal({ onSave, onClose }) {
         {tab === "json" && (
           <>
             <input ref={nameRef} placeholder="Set name (e.g. Plant Pathology Part-10)" style={{width:"100%",background:"#0d1117",border:"1px solid #21262d",borderRadius:10,padding:"10px 12px",color:"#f1f5f9",fontSize:13,fontFamily:"inherit",boxSizing:"border-box",outline:"none",marginBottom:12}}/>
+            {folderPicker}
             <textarea value={json} onChange={e=>setJson(e.target.value)} placeholder="Paste your MCQ JSON here…" style={{width:"100%",height:200,background:"#0d1117",border:"1px solid #21262d",borderRadius:10,padding:12,color:"#f1f5f9",fontSize:12,fontFamily:"monospace",resize:"vertical",boxSizing:"border-box",outline:"none",marginBottom:err?8:12}}/>
             {err && <div style={{background:"#2d0a0a",border:"1px solid #7f1d1d",borderRadius:10,padding:"10px 12px",color:"#fca5a5",fontSize:12,marginBottom:12}}>⚠️ {err}</div>}
             <div style={{display:"flex",gap:10}}>
@@ -1043,6 +1059,7 @@ function JsonModal({ onSave, onClose }) {
         {tab === "code" && (
           <>
             <div style={{background:"#0f1e3a",border:"1px solid #1e3a6e",borderRadius:10,padding:"10px 12px",color:"#93c5fd",fontSize:11,marginBottom:14,lineHeight:1.7}}>🔗 Paste the share code your classmate sent you.</div>
+            {folderPicker}
             <textarea value={code} onChange={e=>setCode(e.target.value)} placeholder="Paste share code here…" style={{width:"100%",height:120,background:"#0d1117",border:"1px solid #21262d",borderRadius:10,padding:12,color:"#f1f5f9",fontSize:12,fontFamily:"monospace",resize:"vertical",boxSizing:"border-box",outline:"none",marginBottom:err?8:12}}/>
             {err && <div style={{background:"#2d0a0a",border:"1px solid #7f1d1d",borderRadius:10,padding:"10px 12px",color:"#fca5a5",fontSize:12,marginBottom:12}}>⚠️ {err}</div>}
             <div style={{display:"flex",gap:10}}>
@@ -1068,6 +1085,43 @@ function RenameModal({ currentTitle, onRename, onClose }) {
           <button onClick={onClose} style={{flex:1,background:"#161b22",color:"#f1f5f9",border:"none",borderRadius:10,padding:12,fontSize:14,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>Cancel</button>
           <button onClick={()=>val.trim()&&onRename(val.trim())} style={{flex:2,background:"#4ade80",color:"#0f172a",border:"none",borderRadius:10,padding:12,fontSize:14,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Save</button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Folder Name Modal (create or rename) ──────────────────────────────────────
+function FolderNameModal({ title, currentValue="", onSubmit, onClose }) {
+  const [val, setVal] = useState(currentValue);
+  return (
+    <div style={{position:"fixed",inset:0,background:"#000000bb",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+      <div style={{background:"#161b22",borderRadius:16,padding:24,width:"100%",maxWidth:380,border:"1px solid #21262d"}}>
+        <h2 style={{color:"#f1f5f9",fontSize:16,margin:"0 0 16px"}}>{title}</h2>
+        <input autoFocus value={val} onChange={e=>setVal(e.target.value)} placeholder="e.g. Plant Pathology"
+          onKeyDown={e=>{if(e.key==="Enter"&&val.trim())onSubmit(val.trim());}}
+          style={{width:"100%",background:"#0d1117",border:"1px solid #21262d",borderRadius:10,padding:"10px 12px",color:"#f1f5f9",fontSize:14,fontFamily:"inherit",boxSizing:"border-box",outline:"none",marginBottom:16}}/>
+        <div style={{display:"flex",gap:10}}>
+          <button onClick={onClose} style={{flex:1,background:"#161b22",color:"#f1f5f9",border:"none",borderRadius:10,padding:12,fontSize:14,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>Cancel</button>
+          <button onClick={()=>val.trim()&&onSubmit(val.trim())} style={{flex:2,background:"#fbbf24",color:"#0f172a",border:"none",borderRadius:10,padding:12,fontSize:14,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Save</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Move-to-Folder Modal ────────────────────────────────────────────────────
+function MoveToFolderModal({ folders, currentFolderId, onMove, onClose }) {
+  const folderList = Object.entries(folders||{});
+  return (
+    <div style={{position:"fixed",inset:0,background:"#000000bb",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+      <div style={{background:"#161b22",borderRadius:16,padding:24,width:"100%",maxWidth:380,border:"1px solid #21262d",maxHeight:"80vh",overflowY:"auto"}}>
+        <h2 style={{color:"#f1f5f9",fontSize:16,margin:"0 0 16px"}}>📁 Move to Folder</h2>
+        <button onClick={()=>onMove(null)} style={{width:"100%",textAlign:"left",background:!currentFolderId?"#2dd4bf22":"#0d1117",border:`1px solid ${!currentFolderId?"#2dd4bf":"#21262d"}`,borderRadius:10,padding:"10px 12px",color:"#f1f5f9",fontSize:13,fontFamily:"inherit",cursor:"pointer",marginBottom:8}}>📄 Unfiled</button>
+        {folderList.length===0 && <div style={{color:"#64748b",fontSize:12,marginBottom:12}}>No folders yet — create one from the library page first.</div>}
+        {folderList.map(([fkey,folder])=>(
+          <button key={fkey} onClick={()=>onMove(fkey)} style={{width:"100%",textAlign:"left",background:currentFolderId===fkey?"#2dd4bf22":"#0d1117",border:`1px solid ${currentFolderId===fkey?"#2dd4bf":"#21262d"}`,borderRadius:10,padding:"10px 12px",color:"#f1f5f9",fontSize:13,fontFamily:"inherit",cursor:"pointer",marginBottom:8}}>📁 {folder.name}</button>
+        ))}
+        <button onClick={onClose} style={{width:"100%",background:"#161b22",color:"#94a3b8",border:"none",borderRadius:10,padding:12,fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"inherit",marginTop:4}}>Cancel</button>
       </div>
     </div>
   );
@@ -1239,6 +1293,7 @@ export default function App() {
   const [rev, setRev]                 = useState(null);
   const [analytics, setAnalytics]     = useState(null);
   const [srs, setSrs]                 = useState(null);
+  const [folders, setFolders]         = useState(null);
   const [screen, setScreen]           = useState("library");
   const [showJson, setShowJson]       = useState(false);
   const [delKey, setDelKey]           = useState(null);
@@ -1248,6 +1303,11 @@ export default function App() {
   const [pendingImport, setPendingImport] = useState(null); // set decoded from a #import= share link
   const [showBackup, setShowBackup]   = useState(false);
   const [focusSort, setFocusSort]     = useState(false); // false=date order, true=grade worst-first
+  const [activeFolderKey, setActiveFolderKey] = useState(null); // folder currently open (screen === "folder")
+  const [showNewFolder, setShowNewFolder]     = useState(false);
+  const [renameFolderKey, setRenameFolderKey] = useState(null);
+  const [delFolderKey, setDelFolderKey]       = useState(null);
+  const [moveSetKey, setMoveSetKey]           = useState(null); // set key currently being moved to a folder
   const [toast, setToast]             = useState("");
   const [activeKey, setActiveKey]     = useState(null);
   const [activeSet, setActiveSet]     = useState(null);
@@ -1361,7 +1421,7 @@ export default function App() {
   // ── Android hardware back button (History API) ──────────────────────────────
   // Maps each in-app screen to the screen the back button should return to.
   // Screens not listed here (e.g. "library") are treated as the app root.
-  const BACK_PARENT = { home: "library", analytics: "library", quiz: "library", result: "library", review: "result" };
+  const BACK_PARENT = { home: "library", analytics: "library", quiz: "library", result: "library", review: "result", folder: "library" };
 
   // Seed a base history entry on mount so the first back press is captured.
   useEffect(() => {
@@ -1394,8 +1454,8 @@ export default function App() {
 
   const enterGuestMode = () => {
     localStorage.setItem(GUEST_KEY, "guest");
-    const l = loadS(LIB_KEY), r = loadS(REV_KEY), a = loadS(ANALYTICS_KEY), s = loadS(SRS_KEY);
-    setLib(l||{}); setRev(r||{}); setSrs(s||{});
+    const l = loadS(LIB_KEY), r = loadS(REV_KEY), a = loadS(ANALYTICS_KEY), s = loadS(SRS_KEY), f = loadS(FOLDERS_KEY);
+    setLib(l||{}); setRev(r||{}); setSrs(s||{}); setFolders(f||{});
     setAnalytics(a||{sessions:[],totalAttempted:0,totalCorrect:0,totalWrong:0,totalSkipped:0});
     setAuthMode("guest");
     setAppScreen("about");
@@ -1404,15 +1464,17 @@ export default function App() {
   const loadCloudData = async (uid) => {
     setSyncStatus("syncing");
     try {
-      const [libData, revData, analyticsData, srsData] = await Promise.all([
+      const [libData, revData, analyticsData, srsData, foldersData] = await Promise.all([
         cloudGet(uid, "library"),
         cloudGet(uid, "revision"),
         cloudGet(uid, "analytics"),
         cloudGet(uid, "srs"),
+        cloudGet(uid, "folders"),
       ]);
       setLib(libData||{});
       setRev(revData||{});
       setSrs(srsData||{});
+      setFolders(foldersData||{});
       // Analytics stored as single doc
       const aDoc = analyticsData["main"] || { sessions:[], totalAttempted:0, totalCorrect:0, totalWrong:0, totalSkipped:0 };
       setAnalytics(aDoc);
@@ -1421,8 +1483,8 @@ export default function App() {
       console.error("Cloud load error:", e);
       setSyncStatus("error");
       // Fallback to local
-      const l = loadS(LIB_KEY), r = loadS(REV_KEY), a = loadS(ANALYTICS_KEY), s = loadS(SRS_KEY);
-      setLib(l||{}); setRev(r||{}); setSrs(s||{});
+      const l = loadS(LIB_KEY), r = loadS(REV_KEY), a = loadS(ANALYTICS_KEY), s = loadS(SRS_KEY), f = loadS(FOLDERS_KEY);
+      setLib(l||{}); setRev(r||{}); setSrs(s||{}); setFolders(f||{});
       setAnalytics(a||{sessions:[],totalAttempted:0,totalCorrect:0,totalWrong:0,totalSkipped:0});
     }
   };
@@ -1558,6 +1620,17 @@ export default function App() {
     } else { saveS(SRS_KEY, s); }
   }, [isCloud, user]);
 
+  const persistFolders = useCallback(async (f) => {
+    setFolders(f);
+    if (isCloud) {
+      setSyncStatus("syncing");
+      try {
+        await Promise.all(Object.entries(f).map(([k,v]) => cloudSave(user.uid, "folders", k, v)));
+        setSyncStatus("synced");
+      } catch { setSyncStatus("error"); }
+    } else { saveS(FOLDERS_KEY, f); }
+  }, [isCloud, user]);
+
   const manualSync = () => { if (user) loadCloudData(user.uid); };
 
   // ── Keyboard shortcuts (quiz) ���───────────────────────────────────────────────
@@ -1668,6 +1741,59 @@ export default function App() {
     showToast(`✏️ Renamed to "${newTitle}"`);
   };
 
+  // ── Folders ──────────────────────────────────────────────────────────────
+  const handleCreateFolder = async (name) => {
+    const k = `f_${Date.now()}`;
+    const newFolders = { ...(folders||{}), [k]: { name, createdAt: Date.now() } };
+    await persistFolders(newFolders);
+    setShowNewFolder(false);
+    showToast(`📁 Folder "${name}" created`);
+  };
+
+  const handleRenameFolder = async (newName) => {
+    if (!renameFolderKey) return;
+    const updated = { ...(folders||{}), [renameFolderKey]: { ...(folders||{})[renameFolderKey], name: newName } };
+    await persistFolders(updated);
+    setRenameFolderKey(null);
+    showToast(`✏️ Folder renamed to "${newName}"`);
+  };
+
+  const handleDeleteFolder = async () => {
+    if (!delFolderKey) return;
+    // Permanently delete the folder AND every set inside it (plus their revision/SRS data).
+    const keysInFolder = Object.entries(lib||{}).filter(([,sd]) => sd.folderId === delFolderKey).map(([k]) => k);
+    const f = { ...(folders||{}) }; delete f[delFolderKey];
+    const l = { ...(lib||{}) }, r = { ...(rev||{}) }, s = { ...(srs||{}) };
+    keysInFolder.forEach(k => { delete l[k]; delete r[k]; delete s[k]; });
+    setFolders(f); setLib(l); setRev(r); setSrs(s);
+    if (isCloud) {
+      setSyncStatus("syncing");
+      try {
+        await Promise.all([
+          cloudDelete(user.uid, "folders", delFolderKey),
+          ...keysInFolder.flatMap(k => [
+            cloudDelete(user.uid, "library", k),
+            cloudDelete(user.uid, "revision", k),
+            cloudDelete(user.uid, "srs", k),
+          ]),
+        ]);
+        setSyncStatus("synced");
+      } catch { setSyncStatus("error"); }
+    } else {
+      saveS(FOLDERS_KEY, f); saveS(LIB_KEY, l); saveS(REV_KEY, r); saveS(SRS_KEY, s);
+    }
+    setDelFolderKey(null);
+    setScreen("library");
+    showToast(`🗑️ Folder and ${keysInFolder.length} set${keysInFolder.length!==1?"s":""} deleted`);
+  };
+
+  const handleMoveSet = async (key, folderId) => {
+    const updated = { ...(lib||{}), [key]: { ...(lib||{})[key], folderId: folderId || null } };
+    await persistLib(updated);
+    setMoveSetKey(null);
+    showToast(folderId ? `📁 Moved to "${(folders||{})[folderId]?.name}"` : "📁 Moved to Unfiled");
+  };
+
   const rd = activeKey ? getRevData(activeKey) : { bk: new Set(), inc: new Set() };
   const allTopics = activeSet ? ["All Topics", ...new Set(activeSet.questions.map(q=>q.topic||"General"))] : [];
   const colors = activeSet ? mkColors(activeSet.questions) : {};
@@ -1753,7 +1879,59 @@ export default function App() {
   const qStat     = q => { if(bk[q.id]) return "bookmarked"; const a=ans[q.id]; if(!a) return "unattempted"; if(a.skipped) return "skipped"; return a.correct?"correct":"wrong"; };
   const unattemptedCount = qs.length - Object.keys(ans).length;
   const sets = Object.entries(lib||{});
+  // A set only counts as "in a folder" if that folder still exists — guards against stale folderId data.
+  const isInFolder = (set) => !!(set.folderId && (folders||{})[set.folderId]);
+  const unfiledSets = sets.filter(([,set]) => !isInFolder(set));
   const bg = { fontFamily:"'Segoe UI',sans-serif", minHeight:"100vh", background:"#0d1117", color:"#f1f5f9", padding:16 };
+
+  // Shared set-card renderer — used on both the main Library screen (unfiled sets)
+  // and inside an open Folder screen.
+  const renderSetCard = ([key, set, d, gradeInfo]) => {
+    const srsDue = getSrsDueCount(key);
+    const topics = [...new Set((set.questions||[]).map(q=>q.topic||"General"))];
+    const setSessions = (analytics?.sessions||[]).filter(s=>s.setTitle===set.title);
+    const bestAcc = setSessions.length>0 ? Math.max(...setSessions.map(s=>(s.correct+s.wrong)>0?Math.round(s.correct/(s.correct+s.wrong)*100):0)) : null;
+    return (
+      <div key={key} style={{background:"#161b22",borderRadius:14,padding:"16px 18px",border:`1px solid ${gradeInfo.grade==="?"?"#21262d":gradeInfo.borderColor}`,marginBottom:10}}>
+        <div style={{display:"flex",alignItems:"flex-start",gap:12}}>
+          <div style={{flex:1,minWidth:0}}>
+            {/* Title row with grade badge */}
+            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:3}}>
+              <div style={{minWidth:28,height:28,borderRadius:8,background:gradeInfo.bg,border:`1.5px solid ${gradeInfo.borderColor}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:900,color:gradeInfo.color,flexShrink:0,letterSpacing:"-0.5px"}}>
+                {gradeInfo.grade}
+              </div>
+              <div style={{fontSize:15,fontWeight:700,color:"#f1f5f9",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{set.title}</div>
+            </div>
+            <div style={{color:"#64748b",fontSize:11,marginBottom:8,paddingLeft:36}}>
+              {set.count} Qs · {new Date(set.savedAt).toLocaleDateString("en-IN",{day:"numeric",month:"short",year:"numeric"})}
+              {bestAcc !== null && <span style={{color:"#a78bfa",marginLeft:8}}>· Best {bestAcc}%</span>}
+              {gradeInfo.grade !== "?" && <span style={{color:gradeInfo.color,marginLeft:8}}>· {gradeInfo.wrongPct}% wrong</span>}
+            </div>
+            <div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:6}}>
+              {d.bk.size>0 && <span style={{background:"#a78bfa22",color:"#a78bfa",borderRadius:6,padding:"2px 8px",fontSize:10,fontWeight:700}}>🔖 {d.bk.size}</span>}
+              {d.inc.size>0 && <span style={{background:"#f8717122",color:"#f87171",borderRadius:6,padding:"2px 8px",fontSize:10,fontWeight:700}}>❌ {d.inc.size}</span>}
+              {srsDue>0 && <span style={{background:"#60a5fa22",color:"#60a5fa",borderRadius:6,padding:"2px 8px",fontSize:10,fontWeight:700}}>🔁 {srsDue} due</span>}
+              {setSessions.length>0 && <span style={{background:"#60a5fa11",color:"#475569",borderRadius:6,padding:"2px 8px",fontSize:10,fontWeight:600}}>📊 {setSessions.length} sessions</span>}
+            </div>
+            <div style={{display:"flex",flexWrap:"wrap",gap:4}}>
+              {topics.slice(0,4).map(t=>(
+                <span key={t} style={{background:"#0d1117",color:"#94a3b8",borderRadius:6,padding:"2px 7px",fontSize:9}}>{t}</span>
+              ))}
+              {topics.length>4 && <span style={{background:"#0d1117",color:"#64748b",borderRadius:6,padding:"2px 7px",fontSize:9}}>+{topics.length-4} more</span>}
+            </div>
+          </div>
+          <div style={{display:"flex",flexDirection:"column",gap:5,flexShrink:0}}>
+            <button onClick={()=>{setActiveSet(set);setActiveKey(key);setTopic("All Topics");setMode("full");setQCount("All");setScreen("home");}} style={{background:"linear-gradient(90deg,#0d9488,#2dd4bf)",color:"#0f172a",border:"none",borderRadius:8,padding:"8px 14px",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Practice →</button>
+            <button onClick={()=>setRenameKey(key)} style={{background:"#161b22",color:"#60a5fa",border:"none",borderRadius:8,padding:"5px 14px",fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>✏️ Rename</button>
+            <button onClick={()=>setMoveSetKey(key)} style={{background:"#161b22",color:"#fbbf24",border:"none",borderRadius:8,padding:"5px 14px",fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>📁 Move</button>
+            <button onClick={()=>setShareSet(set)} style={{background:"#161b22",color:"#38bdf8",border:"none",borderRadius:8,padding:"5px 14px",fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>🔗 Share Link</button>
+            <button onClick={()=>setExportSet(set)} style={{background:"#161b22",color:"#2dd4bf",border:"1px solid #2dd4bf30",borderRadius:8,padding:"5px 14px",fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>⬇ Export</button>
+            <button onClick={()=>setDelKey(key)} style={{background:"#161b22",color:"#f87171",border:"none",borderRadius:8,padding:"5px 14px",fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>🗑️ Delete</button>
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   // ── Import-from-link prompt (takes priority over everything) ─────────────────
   if (pendingImport) return (
@@ -1795,10 +1973,11 @@ export default function App() {
   if (screen === "library") {
     const streak = calcStreak(analytics?.sessions||[]);
     const totalSrsDue = sets.reduce((t,[key])=>t+getSrsDueCount(key), 0);
+    const folderList = Object.entries(folders||{}).sort((a,b)=>(a[1].createdAt||0)-(b[1].createdAt||0));
 
     // Grade order for focus sort: D=0, C=1, B=2, A=3, S=4, ?=5
     const GRADE_ORDER = { D:0, C:1, B:2, A:3, S:4, "?":5 };
-    const gradedSets = sets.map(([key, set]) => {
+    const gradedSets = unfiledSets.map(([key, set]) => {
       const d = getRevData(key);
       const g = calcGrade(analytics?.sessions||[], set.title, d, set.questions?.length||set.count||0);
       return [key, set, d, g];
@@ -1808,15 +1987,17 @@ export default function App() {
       : gradedSets;
     return (
       <div style={bg}>
-        {showJson && <JsonModal onSave={handleSave} onClose={()=>setShowJson(false)}/>}
+        {showJson && <JsonModal onSave={handleSave} onClose={()=>setShowJson(false)} folders={folders}/>}
+        {showNewFolder && <FolderNameModal title="📁 New Folder" onSubmit={handleCreateFolder} onClose={()=>setShowNewFolder(false)}/>}
+        {moveSetKey && <MoveToFolderModal folders={folders} currentFolderId={(lib||{})[moveSetKey]?.folderId} onMove={(fid)=>handleMoveSet(moveSetKey, fid)} onClose={()=>setMoveSetKey(null)}/>}
         {shareSet && <ShareModal set={shareSet} onClose={()=>setShareSet(null)}/>}
         {exportSet && <ExportModal set={exportSet} onClose={()=>setExportSet(null)}/>}
-        {showBackup && <BackupModal lib={lib} rev={rev} analytics={analytics} srs={srs} isCloud={isCloud} user={user}
+        {showBackup && <BackupModal lib={lib} rev={rev} analytics={analytics} srs={srs} folders={folders} isCloud={isCloud} user={user}
           onRestoreComplete={(merged)=>{
             // Data is already persisted (Firestore if cloud, localStorage if guest) inside doRestore.
             // Just reflect the merged result in React state directly — don't re-read localStorage,
             // since that isn't the source of truth in cloud mode.
-            setLib(merged.library); setRev(merged.revision); setAnalytics(merged.analytics); setSrs(merged.srs);
+            setLib(merged.library); setRev(merged.revision); setAnalytics(merged.analytics); setSrs(merged.srs); setFolders(merged.folders||{});
             showToast("✅ Library restored!");
           }}
           onClose={()=>setShowBackup(false)}/>}
@@ -1891,11 +2072,40 @@ export default function App() {
 
           <div style={{display:"flex",gap:8,marginBottom:8}}>
             <button onClick={()=>setShowJson(true)} style={{flex:1,background:"linear-gradient(90deg,#0d9488,#2dd4bf)",color:"#0f172a",border:"none",borderRadius:10,padding:"11px 14px",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>+ Import JSON</button>
-            <button onClick={()=>setShowBackup(true)} style={{background:"#161b22",color:"#2dd4bf",border:"1.5px solid #2dd4bf40",borderRadius:10,padding:"11px 14px",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",gap:6}}>🗄️ Backup</button>
+          </div>
+          <div style={{display:"flex",gap:8,marginBottom:16}}>
+            <button onClick={()=>setShowBackup(true)} style={{flex:1,background:"#161b22",color:"#2dd4bf",border:"1.5px solid #2dd4bf40",borderRadius:10,padding:"11px 14px",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>🗄️ Backup</button>
+            <button onClick={()=>setShowNewFolder(true)} style={{flex:1,background:"#161b22",color:"#fbbf24",border:"1.5px solid #fbbf2440",borderRadius:10,padding:"11px 14px",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>📁 New Folder</button>
           </div>
 
-          {sets.length > 0 && (
-            <div style={{display:"flex",justifyContent:"flex-end",marginBottom:12}}>
+          {folderList.length > 0 && (
+            <div style={{marginBottom:16}}>
+              <div style={{color:"#64748b",fontSize:11,fontWeight:700,marginBottom:8,paddingLeft:2,textTransform:"uppercase",letterSpacing:"0.5px"}}>Folders</div>
+              {folderList.map(([fkey, folder]) => {
+                const count = sets.filter(([,s]) => s.folderId === fkey).length;
+                return (
+                  <div key={fkey} onClick={()=>{setActiveFolderKey(fkey);setScreen("folder");}} role="button" tabIndex={0}
+                    onKeyDown={(e)=>{ if(e.key==="Enter"||e.key===" "){ e.preventDefault(); setActiveFolderKey(fkey); setScreen("folder"); } }}
+                    style={{background:"#161b22",borderRadius:14,padding:"14px 16px",border:"1px solid #21262d",marginBottom:8,display:"flex",alignItems:"center",justifyContent:"space-between",cursor:"pointer"}}>
+                    <div style={{display:"flex",alignItems:"center",gap:10,minWidth:0}}>
+                      <span style={{fontSize:20}}>📁</span>
+                      <div style={{minWidth:0}}>
+                        <div style={{color:"#f1f5f9",fontSize:14,fontWeight:700,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{folder.name}</div>
+                        <div style={{color:"#64748b",fontSize:11,marginTop:1}}>{count} set{count!==1?"s":""}</div>
+                      </div>
+                    </div>
+                    <span style={{color:"#64748b",fontSize:18}}>›</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {unfiledSets.length > 0 && (
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+              {folderList.length > 0
+                ? <div style={{color:"#64748b",fontSize:11,fontWeight:700,paddingLeft:2,textTransform:"uppercase",letterSpacing:"0.5px"}}>Unfiled</div>
+                : <div/>}
               <button onClick={()=>setFocusSort(v=>!v)} style={{background:focusSort?"#f8717122":"#161b22",color:focusSort?"#f87171":"#64748b",border:`1px solid ${focusSort?"#f8717150":"#21262d"}`,borderRadius:8,padding:"5px 12px",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",gap:5}}>
                 {focusSort?"🎯 Focus Sort ON":"🎯 Focus Sort"}
               </button>
@@ -1911,51 +2121,106 @@ export default function App() {
             </div>
           )}
 
-          {sortedSets.map(([key, set, d, gradeInfo]) => {
-            const srsDue = getSrsDueCount(key);
-            const topics = [...new Set((set.questions||[]).map(q=>q.topic||"General"))];
-            const setSessions = (analytics?.sessions||[]).filter(s=>s.setTitle===set.title);
-            const bestAcc = setSessions.length>0 ? Math.max(...setSessions.map(s=>(s.correct+s.wrong)>0?Math.round(s.correct/(s.correct+s.wrong)*100):0)) : null;
-            return (
-              <div key={key} style={{background:"#161b22",borderRadius:14,padding:"16px 18px",border:`1px solid ${gradeInfo.grade==="?"?"#21262d":gradeInfo.borderColor}`,marginBottom:10}}>
-                <div style={{display:"flex",alignItems:"flex-start",gap:12}}>
-                  <div style={{flex:1,minWidth:0}}>
-                    {/* Title row with grade badge */}
-                    <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:3}}>
-                      <div style={{minWidth:28,height:28,borderRadius:8,background:gradeInfo.bg,border:`1.5px solid ${gradeInfo.borderColor}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:900,color:gradeInfo.color,flexShrink:0,letterSpacing:"-0.5px"}}>
-                        {gradeInfo.grade}
-                      </div>
-                      <div style={{fontSize:15,fontWeight:700,color:"#f1f5f9",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{set.title}</div>
-                    </div>
-                    <div style={{color:"#64748b",fontSize:11,marginBottom:8,paddingLeft:36}}>
-                      {set.count} Qs · {new Date(set.savedAt).toLocaleDateString("en-IN",{day:"numeric",month:"short",year:"numeric"})}
-                      {bestAcc !== null && <span style={{color:"#a78bfa",marginLeft:8}}>· Best {bestAcc}%</span>}
-                      {gradeInfo.grade !== "?" && <span style={{color:gradeInfo.color,marginLeft:8}}>· {gradeInfo.wrongPct}% wrong</span>}
-                    </div>
-                    <div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:6}}>
-                      {d.bk.size>0 && <span style={{background:"#a78bfa22",color:"#a78bfa",borderRadius:6,padding:"2px 8px",fontSize:10,fontWeight:700}}>🔖 {d.bk.size}</span>}
-                      {d.inc.size>0 && <span style={{background:"#f8717122",color:"#f87171",borderRadius:6,padding:"2px 8px",fontSize:10,fontWeight:700}}>❌ {d.inc.size}</span>}
-                      {srsDue>0 && <span style={{background:"#60a5fa22",color:"#60a5fa",borderRadius:6,padding:"2px 8px",fontSize:10,fontWeight:700}}>🔁 {srsDue} due</span>}
-                      {setSessions.length>0 && <span style={{background:"#60a5fa11",color:"#475569",borderRadius:6,padding:"2px 8px",fontSize:10,fontWeight:600}}>📊 {setSessions.length} sessions</span>}
-                    </div>
-                    <div style={{display:"flex",flexWrap:"wrap",gap:4}}>
-                      {topics.slice(0,4).map(t=>(
-                        <span key={t} style={{background:"#0d1117",color:"#94a3b8",borderRadius:6,padding:"2px 7px",fontSize:9}}>{t}</span>
-                      ))}
-                      {topics.length>4 && <span style={{background:"#0d1117",color:"#64748b",borderRadius:6,padding:"2px 7px",fontSize:9}}>+{topics.length-4} more</span>}
-                    </div>
-                  </div>
-                  <div style={{display:"flex",flexDirection:"column",gap:5,flexShrink:0}}>
-                    <button onClick={()=>{setActiveSet(set);setActiveKey(key);setTopic("All Topics");setMode("full");setQCount("All");setScreen("home");}} style={{background:"linear-gradient(90deg,#0d9488,#2dd4bf)",color:"#0f172a",border:"none",borderRadius:8,padding:"8px 14px",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Practice →</button>
-                    <button onClick={()=>setRenameKey(key)} style={{background:"#161b22",color:"#60a5fa",border:"none",borderRadius:8,padding:"5px 14px",fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>✏️ Rename</button>
-                    <button onClick={()=>setShareSet(set)} style={{background:"#161b22",color:"#38bdf8",border:"none",borderRadius:8,padding:"5px 14px",fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>🔗 Share Link</button>
-                    <button onClick={()=>setExportSet(set)} style={{background:"#161b22",color:"#2dd4bf",border:"1px solid #2dd4bf30",borderRadius:8,padding:"5px 14px",fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>⬇ Export</button>
-                    <button onClick={()=>setDelKey(key)} style={{background:"#161b22",color:"#f87171",border:"none",borderRadius:8,padding:"5px 14px",fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>🗑️ Delete</button>
-                  </div>
+          {sortedSets.map(renderSetCard)}
+        </div>
+      </div>
+    );
+  }
+
+  // ── Folder ───────────────────────────────────────────────────────────────────
+  if (screen === "folder") {
+    const folder = (folders||{})[activeFolderKey];
+    // Guard: folder was deleted elsewhere (e.g. another tab) — bounce back to library.
+    if (!folder) { setScreen("library"); return null; }
+    const folderSetEntries = sets.filter(([,s]) => s.folderId === activeFolderKey);
+    const GRADE_ORDER = { D:0, C:1, B:2, A:3, S:4, "?":5 };
+    const gradedFolderSets = folderSetEntries.map(([key, set]) => {
+      const d = getRevData(key);
+      const g = calcGrade(analytics?.sessions||[], set.title, d, set.questions?.length||set.count||0);
+      return [key, set, d, g];
+    });
+    const sortedFolderSets = focusSort
+      ? [...gradedFolderSets].sort((a,b) => (GRADE_ORDER[a[3].grade]??5) - (GRADE_ORDER[b[3].grade]??5))
+      : gradedFolderSets;
+    return (
+      <div style={bg}>
+        {showJson && <JsonModal onSave={handleSave} onClose={()=>setShowJson(false)} folders={folders} defaultFolderId={activeFolderKey}/>}
+        {moveSetKey && <MoveToFolderModal folders={folders} currentFolderId={(lib||{})[moveSetKey]?.folderId} onMove={(fid)=>handleMoveSet(moveSetKey, fid)} onClose={()=>setMoveSetKey(null)}/>}
+        {renameFolderKey && <FolderNameModal title="✏️ Rename Folder" currentValue={folder.name} onSubmit={handleRenameFolder} onClose={()=>setRenameFolderKey(null)}/>}
+        {renameKey && <RenameModal currentTitle={(lib||{})[renameKey]?.title||""} onRename={handleRename} onClose={()=>setRenameKey(null)}/>}
+        {shareSet && <ShareModal set={shareSet} onClose={()=>setShareSet(null)}/>}
+        {exportSet && <ExportModal set={exportSet} onClose={()=>setExportSet(null)}/>}
+        {delKey && (
+          <div style={{position:"fixed",inset:0,background:"#000000bb",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+            <div style={{background:"#161b22",borderRadius:16,padding:24,maxWidth:320,width:"100%",border:"1px solid #21262d",textAlign:"center"}}>
+              <div style={{fontSize:32,marginBottom:8}}>🗑️</div>
+              <div style={{color:"#f1f5f9",fontSize:16,fontWeight:700,marginBottom:8}}>Delete this set?</div>
+              <p style={{color:"#94a3b8",fontSize:13,marginBottom:20}}>"{(lib||{})[delKey]?.title}" will be permanently removed.</p>
+              <div style={{display:"flex",gap:10}}>
+                <button onClick={()=>setDelKey(null)} style={{flex:1,background:"#161b22",color:"#f1f5f9",border:"none",borderRadius:10,padding:12,fontSize:14,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>Cancel</button>
+                <button onClick={handleDel} style={{flex:1,background:"#f87171",color:"#0f172a",border:"none",borderRadius:10,padding:12,fontSize:14,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Delete</button>
+              </div>
+            </div>
+          </div>
+        )}
+        {delFolderKey && (
+          <div style={{position:"fixed",inset:0,background:"#000000bb",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+            <div style={{background:"#161b22",borderRadius:16,padding:24,maxWidth:340,width:"100%",border:"1px solid #21262d",textAlign:"center"}}>
+              <div style={{fontSize:32,marginBottom:8}}>🗑️</div>
+              <div style={{color:"#f1f5f9",fontSize:16,fontWeight:700,marginBottom:8}}>Delete "{folder.name}"?</div>
+              <p style={{color:"#94a3b8",fontSize:13,marginBottom:20}}>This will permanently delete the folder <b>and all {folderSetEntries.length} set{folderSetEntries.length!==1?"s":""} inside it</b>. This can't be undone.</p>
+              <div style={{display:"flex",gap:10}}>
+                <button onClick={()=>setDelFolderKey(null)} style={{flex:1,background:"#161b22",color:"#f1f5f9",border:"none",borderRadius:10,padding:12,fontSize:14,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>Cancel</button>
+                <button onClick={handleDeleteFolder} style={{flex:1,background:"#f87171",color:"#0f172a",border:"none",borderRadius:10,padding:12,fontSize:14,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Delete</button>
+              </div>
+            </div>
+          </div>
+        )}
+        {toast && <div style={{position:"fixed",top:16,left:"50%",transform:"translateX(-50%)",background:"#0d2a1f",border:"1px solid #166534",borderRadius:10,padding:"10px 18px",color:"#4ade80",fontSize:13,zIndex:300,whiteSpace:"nowrap",boxShadow:"0 4px 20px #00000060"}}>{toast}</div>}
+
+        <div style={{maxWidth:580,margin:"0 auto"}}>
+          <div style={{background:"#161b22",borderRadius:16,padding:"18px 20px",marginBottom:16,border:"1px solid #21262d"}}>
+            <button onClick={()=>setScreen("library")} style={{display:"inline-flex",alignItems:"center",gap:7,background:"#0d1117",border:"1px solid #21262d",borderRadius:10,padding:"8px 14px 8px 10px",cursor:"pointer",fontFamily:"inherit",marginBottom:14}}>
+              <div style={{width:20,height:20,borderRadius:6,background:"#161b22",display:"flex",alignItems:"center",justifyContent:"center",color:"#64748b",fontSize:14,lineHeight:1}}>‹</div>
+              <span style={{color:"#64748b",fontSize:12,fontWeight:600}}>Library</span>
+            </button>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10}}>
+              <div style={{display:"flex",alignItems:"center",gap:10,minWidth:0}}>
+                <span style={{fontSize:26}}>📁</span>
+                <div style={{minWidth:0}}>
+                  <div style={{fontSize:18,fontWeight:800,color:"#f1f5f9",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{folder.name}</div>
+                  <div style={{color:"#64748b",fontSize:11,marginTop:1}}>{folderSetEntries.length} set{folderSetEntries.length!==1?"s":""}</div>
                 </div>
               </div>
-            );
-          })}
+              <div style={{display:"flex",gap:6,flexShrink:0}}>
+                <button onClick={()=>setRenameFolderKey(activeFolderKey)} style={{background:"#0d1117",color:"#60a5fa",border:"1px solid #21262d",borderRadius:8,padding:"7px 10px",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>✏️ Rename</button>
+                <button onClick={()=>setDelFolderKey(activeFolderKey)} style={{background:"#0d1117",color:"#f87171",border:"1px solid #21262d",borderRadius:8,padding:"7px 10px",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>🗑️ Delete</button>
+              </div>
+            </div>
+          </div>
+
+          <div style={{display:"flex",gap:8,marginBottom:16}}>
+            <button onClick={()=>setShowJson(true)} style={{flex:1,background:"linear-gradient(90deg,#0d9488,#2dd4bf)",color:"#0f172a",border:"none",borderRadius:10,padding:"11px 14px",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>+ Import JSON into this folder</button>
+          </div>
+
+          {folderSetEntries.length > 0 && (
+            <div style={{display:"flex",justifyContent:"flex-end",marginBottom:12}}>
+              <button onClick={()=>setFocusSort(v=>!v)} style={{background:focusSort?"#f8717122":"#161b22",color:focusSort?"#f87171":"#64748b",border:`1px solid ${focusSort?"#f8717150":"#21262d"}`,borderRadius:8,padding:"5px 12px",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",gap:5}}>
+                {focusSort?"🎯 Focus Sort ON":"🎯 Focus Sort"}
+              </button>
+            </div>
+          )}
+
+          {folderSetEntries.length === 0 && (
+            <div style={{background:"#161b22",borderRadius:16,padding:40,border:"1px solid #21262d",textAlign:"center"}}>
+              <div style={{fontSize:48,marginBottom:12}}>📁</div>
+              <h2 style={{fontSize:18,margin:"0 0 8px"}}>This folder is empty</h2>
+              <p style={{color:"#64748b",fontSize:13,margin:"0 0 20px"}}>Import a new set, or move an existing set here from the library.</p>
+              <button onClick={()=>setShowJson(true)} style={{background:"linear-gradient(90deg,#0d9488,#2dd4bf)",color:"#0f172a",border:"none",borderRadius:10,padding:"12px 20px",fontSize:14,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>📋 Paste JSON</button>
+            </div>
+          )}
+
+          {sortedFolderSets.map(renderSetCard)}
         </div>
       </div>
     );
