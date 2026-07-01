@@ -603,6 +603,7 @@ function AboutScreen({ onStart, onHome }) {
   const [copied, setCopied] = useState(false);
   const [skillDownloaded, setSkillDownloaded] = useState(false);
   const [promptOpen, setPromptOpen] = useState(false);
+  const [howToOpen, setHowToOpen] = useState(false);
   const copyPrompt = () => {
     try {
       const ta = document.createElement("textarea");
@@ -667,8 +668,11 @@ function AboutScreen({ onStart, onHome }) {
           </div>
         </div>
         <div style={{background:"#161b22",borderRadius:16,padding:"18px 20px",border:"1px solid #21262d",marginBottom:14}}>
-          <div style={{color:"#94a3b8",fontSize:11,fontWeight:700,letterSpacing:1,marginBottom:18}}>HOW TO USE</div>
-          {[["1","Open Claude.ai and upload your PDF or paste your notes"],["2","Copy the prompt below → paste it in Claude with your material"],["3","Copy the JSON output Claude gives you"],["4","Come back here → Import JSON → Name your set → Save"],["5","Hit Practice and attempt like a real exam 🎯"]].map(([n,text],i,arr)=>(
+          <button onClick={()=>setHowToOpen(o=>!o)} style={{width:"100%",display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,background:"none",border:"none",padding:0,cursor:"pointer",fontFamily:"inherit",marginBottom:howToOpen?18:0}}>
+            <div style={{color:"#94a3b8",fontSize:11,fontWeight:700,letterSpacing:1}}>HOW TO USE</div>
+            <span style={{display:"inline-flex",alignItems:"center",gap:6,color:"#2dd4bf",fontSize:11,fontWeight:700,whiteSpace:"nowrap"}}>{howToOpen?"Tap to collapse":"Tap to expand"}<span style={{fontSize:9}}>{howToOpen?"▲":"▼"}</span></span>
+          </button>
+          {howToOpen && [["1","Open Claude.ai and upload your PDF or paste your notes"],["2","Copy the prompt below → paste it in Claude with your material"],["3","Copy the JSON output Claude gives you"],["4","Come back here → Import JSON → Name your set → Save"],["5","Hit Practice and attempt like a real exam 🎯"]].map(([n,text],i,arr)=>(
             <div key={n} style={{display:"flex",gap:14,alignItems:"flex-start",position:"relative",paddingBottom:i===arr.length-1?0:18}}>
               {i!==arr.length-1 && <div style={{position:"absolute",left:13,top:28,bottom:0,width:2,background:"#2dd4bf30"}}/>}
               <div style={{width:28,height:28,minWidth:28,borderRadius:"50%",background:"#0d2a1f",border:"1.5px solid #2dd4bf",color:"#2dd4bf",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:800,flexShrink:0,zIndex:1,boxShadow:"0 0 12px #2dd4bf25"}}>{n}</div>
