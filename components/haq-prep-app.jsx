@@ -62,8 +62,12 @@ const srsNextDate = (rep, correct) => {
   const today = todayStr();
   const d = new Date(today);
   if (!correct) { d.setDate(d.getDate() + 1); return { due: d.toISOString().slice(0,10), rep: 0 }; }
+  // Use the CURRENT rep to pick the interval (0 → 1 day, 1 → 3 days, ...),
+  // then advance rep for the following review. This avoids skipping the
+  // 1-day interval on a fresh question's first correct answer.
+  const curRep = Math.min(rep, SRS_INTERVALS.length - 1);
+  d.setDate(d.getDate() + SRS_INTERVALS[curRep]);
   const nextRep = Math.min(rep + 1, SRS_INTERVALS.length - 1);
-  d.setDate(d.getDate() + SRS_INTERVALS[nextRep]);
   return { due: d.toISOString().slice(0,10), rep: nextRep };
 };
 
@@ -133,37 +137,40 @@ const calcStreak = (sessions) => {
 };
 
 // ── Set Grade Helper ──────────────────────────────────────────────────────────
-// Grade is based on wrong% (heavy) + bookmarked% (light) across all sessions.
-// Requires at least 1 attempted session; unplayed sets stay "?" (ungraded).
+// Grade is based on "problem %" — the share of the FULL set that is a problem
+// question: ever answered wrong (cumulative), currently bookmarked, OR never
+// attempted at all (skipping ≠ progress). Requires at least 1 attempted
+// session; unplayed sets stay "?" (ungraded).
 const calcGrade = (sessions, setTitle, revData, totalQs) => {
   const setSessions = (sessions||[]).filter(s => s.setTitle === setTitle);
-  if (setSessions.length === 0 || totalQs === 0) return { grade: "?", wrongPct: 0, color: "#64748b", borderColor: "#33415540", bg: "#1e293b" };
-  const totalAttempted = setSessions.reduce((t,s)=>t+(s.correct||0)+(s.wrong||0), 0);
-  const totalWrong     = setSessions.reduce((t,s)=>t+(s.wrong||0), 0);
-  const wrongPct = totalAttempted > 0 ? Math.round(totalWrong / totalAttempted * 100) : 0;
-  // Grade scale
+  if (setSessions.length === 0 || totalQs === 0) return { grade: "?", problemPct: 0, color: "#64748b", borderColor: "#33415540", bg: "#1e293b" };
+  const attSet = revData.att || new Set();
+  const problemIds = new Set([...revData.bk, ...revData.inc]);
+  for (let i = 1; i <= totalQs; i++) { if (!attSet.has(i)) problemIds.add(i); }
+  const problemPct = Math.round(problemIds.size / totalQs * 100);
+  // Grade scale (based on problem % of the full set, not just attempted questions)
   let grade, color, borderColor, bg;
-  if (wrongPct === 0 && revData.bk.size <= Math.ceil(totalQs * 0.05)) {
+  if (problemPct <= 3) {
     grade = "S"; color = "#2dd4bf"; borderColor = "#2dd4bf50"; bg = "#0d2a2a";
-  } else if (wrongPct < 10) {
+  } else if (problemPct < 10) {
     grade = "A"; color = "#4ade80"; borderColor = "#4ade8050"; bg = "#0d2a1f";
-  } else if (wrongPct < 20) {
+  } else if (problemPct < 20) {
     grade = "B"; color = "#60a5fa"; borderColor = "#60a5fa50"; bg = "#0f1a2d";
-  } else if (wrongPct < 35) {
+  } else if (problemPct < 35) {
     grade = "C"; color = "#fbbf24"; borderColor = "#fbbf2450"; bg = "#2a1f0a";
   } else {
     grade = "D"; color = "#f87171"; borderColor = "#f8717150"; bg = "#2a0a0a";
   }
-  return { grade, wrongPct, color, borderColor, bg };
+  return { grade, problemPct, color, borderColor, bg };
 };
 
 // Tip for next grade shown in result screen
-const gradeNextTip = (grade, wrongPct) => {
+const gradeNextTip = (grade, problemPct) => {
   if (grade === "S") return "🏆 You've mastered this set!";
-  if (grade === "A") return `Get 0% wrong to reach Grade S. Keep it up!`;
-  if (grade === "B") return `Get below 10% wrong to reach Grade A. ${wrongPct - 9}% to go.`;
-  if (grade === "C") return `Get below 20% wrong to reach Grade B. Focus on incorrect questions.`;
-  if (grade === "D") return `Get below 35% wrong to reach Grade C. Attack those wrong answers!`;
+  if (grade === "A") return `Get to ≤3% needing work to reach Grade S. Keep it up!`;
+  if (grade === "B") return `Get below 10% needing work to reach Grade A. ${problemPct - 9}% to go.`;
+  if (grade === "C") return `Get below 20% needing work to reach Grade B. Focus on incorrect, bookmarked & unattempted questions.`;
+  if (grade === "D") return `Get below 35% needing work to reach Grade C. Attack those problem questions!`;
   return "Complete at least one quiz to get graded.";
 };
 
@@ -1652,7 +1659,7 @@ export default function App() {
 
   const getRevData = useCallback(key => {
     const d = (rev||{})[key] || {};
-    return { bk: new Set(d.bookmarked||[]), inc: new Set(d.incorrect||[]) };
+    return { bk: new Set(d.bookmarked||[]), inc: new Set(d.incorrect||[]), att: new Set(d.attempted||[]) };
   }, [rev]);
 
   const getSrsData = useCallback(key => (srs||{})[key] || {}, [srs]);
@@ -1663,12 +1670,21 @@ export default function App() {
     return Object.values(setData).filter(q => q.due <= today).length;
   }, [getSrsData]);
 
-  const updateSrsAfterQuiz = useCallback((key, ansData) => {
+  const updateSrsAfterQuiz = useCallback((key, ansData, bkSet) => {
     const setData = { ...(getSrsData(key)) };
     Object.entries(ansData).forEach(([qId, a]) => {
-      if (a.skipped) return;
       const existing = setData[qId] || { rep: 0 };
-      const { due, rep } = srsNextDate(existing.rep, a.correct);
+      // Fix 2: a skipped question is treated the same as a WRONG answer for
+      // scheduling — due again tomorrow, repetition count resets.
+      const isCorrect = !a.skipped && !!a.correct;
+      let { due, rep } = srsNextDate(existing.rep, isCorrect);
+      // Fix 3: a bookmarked question resurfaces sooner — cap its due date at
+      // a maximum of 3 days out, but never push it later than it already was.
+      if (bkSet && bkSet.has(+qId)) {
+        const cap = new Date(todayStr()); cap.setDate(cap.getDate() + 3);
+        const capStr = cap.toISOString().slice(0,10);
+        if (due > capStr) due = capStr;
+      }
       setData[qId] = { due, rep };
     });
     persistSrs({ ...(srs||{}), [key]: setData });
@@ -1677,8 +1693,11 @@ export default function App() {
   const saveRevData = useCallback((key, newAns, newBk) => {
     const d = getRevData(key);
     Object.entries(newBk).forEach(([id,v]) => v ? d.bk.add(+id) : d.bk.delete(+id));
-    Object.entries(newAns).forEach(([id,a]) => { if(!a.correct&&!a.skipped) d.inc.add(+id); });
-    persistRev({...(rev||{}), [key]:{bookmarked:[...d.bk],incorrect:[...d.inc]}});
+    Object.entries(newAns).forEach(([id,a]) => {
+      if (a.selected !== null) d.att.add(+id);
+      if (!a.correct && !a.skipped) d.inc.add(+id);
+    });
+    persistRev({...(rev||{}), [key]:{bookmarked:[...d.bk],incorrect:[...d.inc],attempted:[...d.att]}});
   }, [rev, getRevData, persistRev]);
 
   const saveSession = useCallback((ansData, duration, setTitle, topicStats) => {
@@ -1794,7 +1813,7 @@ export default function App() {
     showToast(folderId ? `📁 Moved to "${(folders||{})[folderId]?.name}"` : "📁 Moved to Unfiled");
   };
 
-  const rd = activeKey ? getRevData(activeKey) : { bk: new Set(), inc: new Set() };
+  const rd = activeKey ? getRevData(activeKey) : { bk: new Set(), inc: new Set(), att: new Set() };
   const allTopics = activeSet ? ["All Topics", ...new Set(activeSet.questions.map(q=>q.topic||"General"))] : [];
   const colors = activeSet ? mkColors(activeSet.questions) : {};
 
@@ -1829,9 +1848,11 @@ export default function App() {
     });
     saveRevData(activeKey, a, b);
     saveSession(a, tTotal, activeSet?.title||"Unknown", topicStats);
-    updateSrsAfterQuiz(activeKey, a);
+    const finalBk = getRevData(activeKey).bk;
+    Object.entries(b).forEach(([id,v]) => v ? finalBk.add(+id) : finalBk.delete(+id));
+    updateSrsAfterQuiz(activeKey, a, finalBk);
     setScreen("result");
-  }, [activeKey, saveRevData, saveSession, updateSrsAfterQuiz, tTotal, activeSet, qs]);
+  }, [activeKey, saveRevData, saveSession, updateSrsAfterQuiz, getRevData, tTotal, activeSet, qs]);
 
   useEffect(() => {
     if (screen!=="quiz"||!timerOn||revealed) return;
@@ -1905,7 +1926,7 @@ export default function App() {
             <div style={{color:"#64748b",fontSize:11,marginBottom:8,paddingLeft:36}}>
               {set.count} Qs · {new Date(set.savedAt).toLocaleDateString("en-IN",{day:"numeric",month:"short",year:"numeric"})}
               {bestAcc !== null && <span style={{color:"#a78bfa",marginLeft:8}}>· Best {bestAcc}%</span>}
-              {gradeInfo.grade !== "?" && <span style={{color:gradeInfo.color,marginLeft:8}}>· {gradeInfo.wrongPct}% wrong</span>}
+              {gradeInfo.grade !== "?" && <span style={{color:gradeInfo.color,marginLeft:8}}>· {gradeInfo.problemPct}% needs work</span>}
             </div>
             <div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:6}}>
               {d.bk.size>0 && <span style={{background:"#a78bfa22",color:"#a78bfa",borderRadius:6,padding:"2px 8px",fontSize:10,fontWeight:700}}>🔖 {d.bk.size}</span>}
@@ -2384,7 +2405,7 @@ export default function App() {
               </div>
             </div>
             <div style={{marginTop:8,background:"#0d1117",borderRadius:7,padding:"6px 9px",fontSize:10,color:"#64748b",lineHeight:1.6}}>
-              💡 {gradeNextTip(newGradeInfo.grade, newGradeInfo.wrongPct)}
+              💡 {gradeNextTip(newGradeInfo.grade, newGradeInfo.problemPct)}
             </div>
           </div>
           {Object.keys(topicStats).length>1 && (
