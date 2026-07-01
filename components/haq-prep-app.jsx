@@ -2230,33 +2230,33 @@ export default function App() {
           {authMode==="guest" && <GuestBanner setCount={sets.length} onBackup={()=>setShowBackup(true)} onSignIn={handleSwitchToCloud}/>}
 
           {/* Header */}
-          <div style={{background:"#161b22",borderRadius:16,padding:"18px 20px",marginBottom:12,border:"1px solid #21262d",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+          <div style={{background:"#161b22",borderRadius:16,padding:"18px 20px",marginBottom:12,border:"1px solid #21262d"}}>
             <div
               onClick={()=>setAuthMode("auth")}
               role="button"
               tabIndex={0}
               aria-label="Go to home page"
               onKeyDown={(e)=>{ if(e.key==="Enter"||e.key===" "){ e.preventDefault(); setAuthMode("auth"); } }}
-              style={{display:"flex",alignItems:"center",gap:12,cursor:"pointer"}}
+              style={{display:"flex",alignItems:"center",gap:12,cursor:"pointer",marginBottom:14}}
             >
               <div style={{width:46,height:46,borderRadius:12,overflow:"hidden",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
                 <img src="/icon-192.png" alt="HAQ PREP logo" width={46} height={46} style={{width:"100%",height:"100%",objectFit:"cover"}}/>
               </div>
-              <div>
-                <div style={{fontSize:18,fontWeight:800,color:"#f1f5f9",letterSpacing:"-0.3px"}}>HAQ PREP</div>
+              <div style={{minWidth:0}}>
+                <div style={{fontSize:18,fontWeight:800,color:"#f1f5f9",letterSpacing:"-0.3px",whiteSpace:"nowrap"}}>HAQ PREP</div>
                 <div style={{color:"#64748b",fontSize:11,marginTop:1}}>{sets.length} set{sets.length!==1?"s":""} in library</div>
               </div>
             </div>
-            <div style={{display:"flex",gap:8,alignItems:"center"}}>
-              <button onClick={()=>setAppScreen("about")} style={{display:"inline-flex",alignItems:"center",gap:7,background:"#161b22",border:"1px solid #21262d",borderRadius:10,padding:"8px 14px 8px 10px",cursor:"pointer",fontFamily:"inherit"}}>
-                <div style={{width:20,height:20,borderRadius:6,background:"#0d1117",display:"flex",alignItems:"center",justifyContent:"center",color:"#64748b",fontSize:14,lineHeight:1}}>‹</div>
+            <div style={{display:"flex",gap:8}}>
+              <button onClick={()=>setAppScreen("about")} style={{flex:1,display:"inline-flex",alignItems:"center",justifyContent:"center",gap:7,background:"#0d1117",border:"1px solid #21262d",borderRadius:10,padding:"9px 10px",cursor:"pointer",fontFamily:"inherit"}}>
+                <div style={{width:18,height:18,borderRadius:5,display:"flex",alignItems:"center",justifyContent:"center",color:"#64748b",fontSize:13,lineHeight:1}}>‹</div>
                 <span style={{color:"#64748b",fontSize:12,fontWeight:600}}>Back</span>
               </button>
-              <button onClick={()=>setScreen("analytics")} style={{background:"#161b22",border:"1px solid #21262d",borderRadius:12,padding:"10px 14px",color:"#a78bfa",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit",display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
-                <span style={{fontSize:18}}>📊</span><span style={{fontSize:10}}>Analytics</span>
+              <button onClick={()=>setScreen("analytics")} style={{flex:1,background:"#0d1117",border:"1px solid #21262d",borderRadius:10,padding:"9px 10px",color:"#a78bfa",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>
+                <span style={{fontSize:15}}>📊</span><span>Analytics</span>
               </button>
-              <button onClick={()=>setScreen("settings")} style={{background:"#161b22",border:"1px solid #21262d",borderRadius:12,padding:"10px 14px",color:"#94a3b8",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit",display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
-                <span style={{fontSize:18}}>⚙️</span><span style={{fontSize:10}}>Settings</span>
+              <button onClick={()=>setScreen("settings")} style={{flex:1,background:"#0d1117",border:"1px solid #21262d",borderRadius:10,padding:"9px 10px",color:"#94a3b8",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>
+                <span style={{fontSize:15}}>⚙️</span><span>Settings</span>
               </button>
             </div>
           </div>
