@@ -821,6 +821,13 @@ function ExportModal({ set, onClose }) {
       setCopied(true); setTimeout(()=>setCopied(false), 2500);
     } catch { navigator.clipboard?.writeText(json).then(()=>{ setCopied(true); setTimeout(()=>setCopied(false),2500); }).catch(()=>{}); }
   };
+  const doDownload = () => {
+    const blob = new Blob([json], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const safeName = (set.title||"set").replace(/[^a-z0-9]+/gi,"-").toLowerCase();
+    const a = document.createElement("a"); a.href = url; a.download = `${safeName}.json`;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+  };
   return (
     <div style={{position:"fixed",inset:0,background:"#000000bb",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
       <div style={{background:"#161b22",borderRadius:20,padding:24,width:"100%",maxWidth:520,border:"1px solid #21262d",maxHeight:"90vh",display:"flex",flexDirection:"column"}}>
@@ -832,6 +839,7 @@ function ExportModal({ set, onClose }) {
         <textarea readOnly value={json} onFocus={e=>e.target.select()} style={{flex:1,minHeight:200,maxHeight:340,background:"#0d1117",border:"1px solid #21262d",borderRadius:10,padding:12,color:"#64748b",fontSize:10,fontFamily:"monospace",resize:"none",outline:"none",lineHeight:1.6,overflowY:"auto"}}/>
         <div style={{display:"flex",gap:10,marginTop:14}}>
           <button onClick={onClose} style={{flex:1,background:"#161b22",color:"#f1f5f9",border:"none",borderRadius:10,padding:12,fontSize:14,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>Close</button>
+          <button onClick={doDownload} style={{flex:1,background:"#161b22",color:"#2dd4bf",border:"1px solid #2dd4bf30",borderRadius:10,padding:12,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>💾 Download</button>
           <button onClick={doCopy} style={{flex:2,background:copied?"#0d2a1f":"linear-gradient(90deg,#0d9488,#2dd4bf)",color:copied?"#4ade80":"#0f172a",border:copied?"1px solid #4ade80":"none",borderRadius:10,padding:12,fontSize:14,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>{copied ? "✅ Copied!" : "📋 Copy JSON"}</button>
         </div>
       </div>
@@ -2447,6 +2455,18 @@ export default function App() {
                 </div>
               </div>
               <div style={{display:"flex",gap:6,flexShrink:0}}>
+                <button onClick={()=>{
+                  const folderKeys = folderSetEntries.map(([key])=>key);
+                  const filteredLib = Object.fromEntries(folderKeys.map(k=>[k,(lib||{})[k]]));
+                  const filteredRev = Object.fromEntries(folderKeys.filter(k=>(rev||{})[k]).map(k=>[k,(rev||{})[k]]));
+                  const filteredSrs = Object.fromEntries(folderKeys.filter(k=>(srs||{})[k]).map(k=>[k,(srs||{})[k]]));
+                  const backup = { backup_version:2, app:"HAQ PREP", exported_at:new Date().toISOString().slice(0,10), sets_count:folderKeys.length, library:filteredLib, revision:filteredRev, analytics:{}, srs:filteredSrs, folders:{ [activeFolderKey]: folder } };
+                  const blob = new Blob([JSON.stringify(backup,null,2)],{type:"application/json"});
+                  const url = URL.createObjectURL(blob);
+                  const safeName = (folder.name||"folder").replace(/[^a-z0-9]+/gi,"-").toLowerCase();
+                  const a = document.createElement("a"); a.href=url; a.download=`haqprep-${safeName}-${new Date().toISOString().slice(0,10)}.json`;
+                  document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+                }} style={{background:"#0d1117",color:"#2dd4bf",border:"1px solid #2dd4bf30",borderRadius:8,padding:"7px 10px",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>⬇ Export</button>
                 <button onClick={()=>setRenameFolderKey(activeFolderKey)} style={{background:"#0d1117",color:"#60a5fa",border:"1px solid #21262d",borderRadius:8,padding:"7px 10px",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>✏️ Rename</button>
                 <button onClick={()=>setDelFolderKey(activeFolderKey)} style={{background:"#0d1117",color:"#f87171",border:"1px solid #21262d",borderRadius:8,padding:"7px 10px",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>🗑️ Delete</button>
               </div>
