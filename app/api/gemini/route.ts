@@ -117,10 +117,10 @@ export async function POST(req: NextRequest) {
     // ── 1. EXPLAIN (first deep explanation for a question) ────────────────────
     if (action === "explain") {
       const { question, options, correctIndex, selectedIndex, existingExplanation, topic } = payload;
-      const system = `You are a B.Sc. Agriculture exam tutor (ICAR JRF level). Be precise, exam-focused, and concise. Plain text only — no markdown headers, no bullet symbols.`;
+      const system = `You are an expert exam tutor. Adapt automatically to the subject, exam level, and difficulty inferred from the provided question context. Explain concepts clearly, accurately, and in an exam-focused manner. Plain text only — no markdown headers, no bullet symbols.`;
       const prompt = `Explain this MCQ in more depth than the brief explanation already given. Max 120 words. Explain why the correct option is right AND why the student's selected wrong option is a common distractor/mistake.
 
-Topic: ${topic || "General Agriculture"}
+Topic: ${topic || "General"}
 Question: ${question}
 Options: ${options.map((o: string, i: number) => `${String.fromCharCode(65+i)}. ${o}`).join(" | ")}
 Correct answer: ${String.fromCharCode(65+correctIndex)}
@@ -134,7 +134,7 @@ Brief explanation already shown: ${existingExplanation || "(none)"}`;
     // ── 2. DOUBT CHAT (follow-up Q&A on a question) ───────────────────────────
     if (action === "doubt") {
       const { question, options, correctIndex, topic, history, userMessage } = payload;
-      const system = `You are a concise B.Sc. Agriculture tutor (ICAR JRF level). The student is asking follow-up doubts about a specific MCQ. Answer only what they ask. Max 100 words per reply. Plain text only — no markdown, no bullet symbols, no headers.`;
+      const system = `You are an expert tutor helping a student with follow-up doubts on a specific question. Adapt automatically to the subject and difficulty. Give concise answers for simple doubts and detailed conceptual explanations for complex doubts. Use examples when useful. Match your reply length to the doubt's complexity: 50-100 words for simple/factual doubts, 100-250 words for medium doubts needing some explanation, and 250-500 words for complex conceptual doubts needing full breakdown. Plain text only — no markdown, no bullet symbols, no headers.`;
 
       // Build the conversation — first turn sets question context
       const contextMsg = `The MCQ under discussion:
@@ -161,7 +161,7 @@ Correct answer: ${String.fromCharCode(65+correctIndex)}`;
     if (action === "revision") {
       const { weakTopics, overallAcc, totalSessions, recentWrongSamples, bookmarkedSamples } = payload;
 
-      const system = `You are a B.Sc. Agriculture exam strategist. Generate a personalized, exam-ready revision sheet. Plain text only. Use simple section labels like "WEAK TOPICS TO REVISE:", "KEY CONCEPTS TO REVIEW:", "QUICK FACTS TO MEMORIZE:", "EXAM STRATEGY:". No markdown symbols, no bullet points — write in short numbered lines or plain sentences within each section.`;
+      const system = `You are an expert exam strategist. Analyze student performance data and generate personalized revision guidance based on weak areas, mistakes, and accuracy patterns regardless of subject. Plain text only. Use simple section labels like "WEAK TOPICS TO REVISE:", "KEY CONCEPTS TO REVIEW:", "QUICK FACTS TO MEMORIZE:", "EXAM STRATEGY:". No markdown symbols, no bullet points — write in short numbered lines or plain sentences within each section.`;
 
       const prompt = `Generate a personalized revision sheet for this student based on their real performance data.
 
