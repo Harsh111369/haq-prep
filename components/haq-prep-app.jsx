@@ -544,7 +544,7 @@ function SplashScreen({ user, onGoogle, onGuest, onContinue, onSignOut, loading,
           <div style={{width:56,height:56,borderRadius:14,overflow:"hidden",display:"flex",alignItems:"center",justifyContent:"center",boxShadow:"0 0 20px #2dd4bf40"}}>
             <img src="/icon-192.png" alt="HAQ PREP logo" width={56} height={56} style={{width:"100%",height:"100%",objectFit:"cover"}}/>
           </div>
-          <span style={{color:"#f1f5f9",fontSize:19,fontWeight:700,letterSpacing:"0.3px"}}>HAQ PREP</span>
+          <span style={{fontFamily:"'Courier New',monospace",color:"#f1f5f9",fontSize:19,fontWeight:700,letterSpacing:"-0.3px"}}>haq<span style={{color:"#2dd4bf"}}>/</span>prep</span>
         </div>
         <div style={{background:"#161b22",border:"1px solid #21262d",borderRadius:8,padding:"5px 12px",color:"#94a3b8",fontSize:12,fontWeight:600}}>v10.1</div>
       </div>
@@ -2215,7 +2215,7 @@ export default function App() {
       <div style={{width:88,height:88,borderRadius:20,overflow:"hidden",boxShadow:"0 0 32px #2dd4bf40"}}>
         <img src="/icon-192.png" alt="HAQ PREP" width={88} height={88} style={{width:"100%",height:"100%",objectFit:"cover",display:"block"}}/>
       </div>
-      <div style={{color:"#f1f5f9",fontSize:16,fontWeight:700,letterSpacing:"0.3px"}}>HAQ PREP</div>
+      <div style={{fontFamily:"'Courier New',monospace",color:"#f1f5f9",fontSize:16,fontWeight:700,letterSpacing:"-0.3px"}}>haq<span style={{color:"#2dd4bf"}}>/</span>prep</div>
       <div style={{width:20,height:20,border:"2px solid #2dd4bf",borderTopColor:"transparent",borderRadius:"50%",animation:"spin 0.8s linear infinite"}}/>
       <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
     </div>
@@ -2341,7 +2341,7 @@ export default function App() {
                 <img src="/icon-192.png" alt="HAQ PREP logo" width={46} height={46} style={{width:"100%",height:"100%",objectFit:"cover"}}/>
               </div>
               <div style={{minWidth:0}}>
-                <div style={{fontSize:18,fontWeight:800,color:"#f1f5f9",letterSpacing:"-0.3px",whiteSpace:"nowrap"}}>HAQ PREP</div>
+                <div style={{fontFamily:"'Courier New',monospace",fontSize:18,fontWeight:800,color:"#f1f5f9",letterSpacing:"-0.3px",whiteSpace:"nowrap"}}>haq<span style={{color:"#2dd4bf"}}>/</span>prep</div>
                 <div style={{color:"#64748b",fontSize:11,marginTop:1}}>{sets.length} set{sets.length!==1?"s":""} in library</div>
               </div>
             </div>
