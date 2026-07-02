@@ -584,7 +584,7 @@ function SplashScreen({ user, onGoogle, onGuest, onContinue, onSignOut, loading,
             🔧 Firebase not set up — Google sign-in unavailable. Guest mode works fine.
           </div>
         )}
-        <div style={{color:"#334155",fontSize:11,textAlign:"center",marginTop:4}}>No account needed · works offline</div>
+        <div style={{color:"#334155",fontSize:11,textAlign:"center",marginTop:4}}>No account needed</div>
       </div>
 
       {/* Footer */}
@@ -603,6 +603,7 @@ function AboutScreen({ onStart, onHome }) {
   const [copied, setCopied] = useState(false);
   const [skillDownloaded, setSkillDownloaded] = useState(false);
   const [promptOpen, setPromptOpen] = useState(false);
+  const [howToOpen, setHowToOpen] = useState(false);
   const copyPrompt = () => {
     try {
       const ta = document.createElement("textarea");
@@ -667,8 +668,11 @@ function AboutScreen({ onStart, onHome }) {
           </div>
         </div>
         <div style={{background:"#161b22",borderRadius:16,padding:"18px 20px",border:"1px solid #21262d",marginBottom:14}}>
-          <div style={{color:"#94a3b8",fontSize:11,fontWeight:700,letterSpacing:1,marginBottom:18}}>HOW TO USE</div>
-          {[["1","Open Claude.ai and upload your PDF or paste your notes"],["2","Copy the prompt below → paste it in Claude with your material"],["3","Copy the JSON output Claude gives you"],["4","Come back here → Import JSON → Name your set → Save"],["5","Hit Practice and attempt like a real exam 🎯"]].map(([n,text],i,arr)=>(
+          <button onClick={()=>setHowToOpen(o=>!o)} style={{width:"100%",display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,background:"none",border:"none",padding:0,cursor:"pointer",fontFamily:"inherit",marginBottom:howToOpen?18:0}}>
+            <div style={{color:"#94a3b8",fontSize:11,fontWeight:700,letterSpacing:1}}>HOW TO USE</div>
+            <span style={{display:"inline-flex",alignItems:"center",gap:6,color:"#2dd4bf",fontSize:11,fontWeight:700,whiteSpace:"nowrap"}}>{howToOpen?"Tap to collapse":"Tap to expand"}<span style={{fontSize:9}}>{howToOpen?"▲":"▼"}</span></span>
+          </button>
+          {howToOpen && [["1","Open Claude.ai and upload your PDF or paste your notes"],["2","Copy the prompt below → paste it in Claude with your material"],["3","Copy the JSON output Claude gives you"],["4","Come back here → Import JSON → Name your set → Save"],["5","Hit Practice and attempt like a real exam 🎯"]].map(([n,text],i,arr)=>(
             <div key={n} style={{display:"flex",gap:14,alignItems:"flex-start",position:"relative",paddingBottom:i===arr.length-1?0:18}}>
               {i!==arr.length-1 && <div style={{position:"absolute",left:13,top:28,bottom:0,width:2,background:"#2dd4bf30"}}/>}
               <div style={{width:28,height:28,minWidth:28,borderRadius:"50%",background:"#0d2a1f",border:"1.5px solid #2dd4bf",color:"#2dd4bf",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:800,flexShrink:0,zIndex:1,boxShadow:"0 0 12px #2dd4bf25"}}>{n}</div>
@@ -1979,6 +1983,12 @@ export default function App() {
     return () => clearInterval(totalRef.current);
   }, [screen]);
 
+  // A question counts as "resolved" only once it has been actually answered
+  // (selected !== null). A skipped entry is deliberately left unresolved so
+  // it can be revisited in a later round, exam-style.
+  const isAnswered = qid => { const a=ans[qid]; return !!a && a.selected!==null; };
+  const findUnresolved = excludeId => qs.findIndex(qq => qq.id!==excludeId && !isAnswered(qq.id));
+
   const doSelect = idx => {
     if (revealed) return;
     clearInterval(timerRef.current);
@@ -1988,12 +1998,50 @@ export default function App() {
   const doSkip = () => {
     if (revealed) return;
     clearInterval(timerRef.current);
-    setAns(p=>({...p,[qs[cur].id]:{selected:null,correct:false,skipped:true}}));
-    setRevealed(true);
+    const id = qs[cur].id;
+    setAns(p=>({...p,[id]:{selected:null,correct:false,skipped:true}}));
+    // Skip just moves on — it never reveals the answer.
+    const n = cur+1;
+    if (n<qs.length) {
+      setCur(n);
+      setRevealed(isAnswered(qs[n]?.id));
+      if (!isAnswered(qs[n]?.id)) setTLeft(timerSec);
+    } else {
+      // Reached the end — loop back to the earliest unresolved question
+      // (skipped or untouched) so skipped questions can be attempted later.
+      const idx = findUnresolved(id);
+      if (idx!==-1) { setCur(idx); setRevealed(false); setTLeft(timerSec); }
+      else handleFinishClick();
+    }
   };
-  const goTo = idx => { setCur(idx); setRevealed(!!ans[qs[idx]?.id]); if(!ans[qs[idx]?.id]) setTLeft(timerSec); setShowPal(false); };
-  const doNext = () => { const n=cur+1; if(n<qs.length){setCur(n);setRevealed(!!ans[qs[n]?.id]);if(!ans[qs[n]?.id])setTLeft(timerSec);}else finish(ans,bk); };
-  const doPrev = () => { const p=cur-1; if(p>=0){setCur(p);setRevealed(!!ans[qs[p]?.id]);if(!ans[qs[p]?.id])setTLeft(timerSec);} };
+  const goTo = idx => {
+    setCur(idx);
+    setRevealed(isAnswered(qs[idx]?.id));
+    if (!isAnswered(qs[idx]?.id)) setTLeft(timerSec);
+    setShowPal(false);
+  };
+  const doNext = () => {
+    const n=cur+1;
+    if(n<qs.length){
+      setCur(n);
+      setRevealed(isAnswered(qs[n]?.id));
+      if(!isAnswered(qs[n]?.id)) setTLeft(timerSec);
+    } else {
+      // Reached the end — if skipped/unanswered questions remain, go attempt
+      // them instead of forcing a finish. Explicit Submit still overrides.
+      const idx = findUnresolved(null);
+      if (idx!==-1) { setCur(idx); setRevealed(false); setTLeft(timerSec); }
+      else handleFinishClick();
+    }
+  };
+  const doPrev = () => {
+    const p=cur-1;
+    if(p>=0){
+      setCur(p);
+      setRevealed(isAnswered(qs[p]?.id));
+      if(!isAnswered(qs[p]?.id)) setTLeft(timerSec);
+    }
+  };
 
   const correct   = Object.values(ans).filter(a=>a.correct).length;
   const wrong     = Object.values(ans).filter(a=>!a.correct&&!a.skipped&&a.selected!==null).length;
@@ -2003,7 +2051,7 @@ export default function App() {
   const maxMarks  = qs.length*MARKS_CORRECT;
   const acc       = attempted>0?Math.round(correct/attempted*100):0;
   const qStat     = q => { if(bk[q.id]) return "bookmarked"; const a=ans[q.id]; if(!a) return "unattempted"; if(a.skipped) return "skipped"; return a.correct?"correct":"wrong"; };
-  const unattemptedCount = qs.length - Object.keys(ans).length;
+  const unattemptedCount = qs.filter(qq=>!isAnswered(qq.id)).length;
   const sets = Object.entries(lib||{});
   // A set only counts as "in a folder" if that folder still exists — guards against stale folderId data.
   const isInFolder = (set) => !!(set.folderId && (folders||{})[set.folderId]);
@@ -2186,33 +2234,33 @@ export default function App() {
           {authMode==="guest" && <GuestBanner setCount={sets.length} onBackup={()=>setShowBackup(true)} onSignIn={handleSwitchToCloud}/>}
 
           {/* Header */}
-          <div style={{background:"#161b22",borderRadius:16,padding:"18px 20px",marginBottom:12,border:"1px solid #21262d",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+          <div style={{background:"#161b22",borderRadius:16,padding:"18px 20px",marginBottom:12,border:"1px solid #21262d"}}>
             <div
               onClick={()=>setAuthMode("auth")}
               role="button"
               tabIndex={0}
               aria-label="Go to home page"
               onKeyDown={(e)=>{ if(e.key==="Enter"||e.key===" "){ e.preventDefault(); setAuthMode("auth"); } }}
-              style={{display:"flex",alignItems:"center",gap:12,cursor:"pointer"}}
+              style={{display:"flex",alignItems:"center",gap:12,cursor:"pointer",marginBottom:14}}
             >
               <div style={{width:46,height:46,borderRadius:12,overflow:"hidden",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
                 <img src="/icon-192.png" alt="HAQ PREP logo" width={46} height={46} style={{width:"100%",height:"100%",objectFit:"cover"}}/>
               </div>
-              <div>
-                <div style={{fontSize:18,fontWeight:800,color:"#f1f5f9",letterSpacing:"-0.3px"}}>HAQ PREP</div>
+              <div style={{minWidth:0}}>
+                <div style={{fontSize:18,fontWeight:800,color:"#f1f5f9",letterSpacing:"-0.3px",whiteSpace:"nowrap"}}>HAQ PREP</div>
                 <div style={{color:"#64748b",fontSize:11,marginTop:1}}>{sets.length} set{sets.length!==1?"s":""} in library</div>
               </div>
             </div>
-            <div style={{display:"flex",gap:8,alignItems:"center"}}>
-              <button onClick={()=>setAppScreen("about")} style={{display:"inline-flex",alignItems:"center",gap:7,background:"#161b22",border:"1px solid #21262d",borderRadius:10,padding:"8px 14px 8px 10px",cursor:"pointer",fontFamily:"inherit"}}>
-                <div style={{width:20,height:20,borderRadius:6,background:"#0d1117",display:"flex",alignItems:"center",justifyContent:"center",color:"#64748b",fontSize:14,lineHeight:1}}>‹</div>
+            <div style={{display:"flex",gap:8}}>
+              <button onClick={()=>setAppScreen("about")} style={{flex:1,display:"inline-flex",alignItems:"center",justifyContent:"center",gap:7,background:"#0d1117",border:"1px solid #21262d",borderRadius:10,padding:"9px 10px",cursor:"pointer",fontFamily:"inherit"}}>
+                <div style={{width:18,height:18,borderRadius:5,display:"flex",alignItems:"center",justifyContent:"center",color:"#64748b",fontSize:13,lineHeight:1}}>‹</div>
                 <span style={{color:"#64748b",fontSize:12,fontWeight:600}}>Back</span>
               </button>
-              <button onClick={()=>setScreen("analytics")} style={{background:"#161b22",border:"1px solid #21262d",borderRadius:12,padding:"10px 14px",color:"#a78bfa",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit",display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
-                <span style={{fontSize:18}}>📊</span><span style={{fontSize:10}}>Analytics</span>
+              <button onClick={()=>setScreen("analytics")} style={{flex:1,background:"#0d1117",border:"1px solid #21262d",borderRadius:10,padding:"9px 10px",color:"#a78bfa",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>
+                <span style={{fontSize:15}}>📊</span><span>Analytics</span>
               </button>
-              <button onClick={()=>setScreen("settings")} style={{background:"#161b22",border:"1px solid #21262d",borderRadius:12,padding:"10px 14px",color:"#94a3b8",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit",display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
-                <span style={{fontSize:18}}>⚙️</span><span style={{fontSize:10}}>Settings</span>
+              <button onClick={()=>setScreen("settings")} style={{flex:1,background:"#0d1117",border:"1px solid #21262d",borderRadius:10,padding:"9px 10px",color:"#94a3b8",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>
+                <span style={{fontSize:15}}>⚙️</span><span>Settings</span>
               </button>
             </div>
           </div>
@@ -2641,7 +2689,7 @@ export default function App() {
   const tPct = timerOn?(tLeft/timerSec)*100:100;
   const tClr = tLeft>timerSec*0.33?"#4ade80":tLeft>timerSec*0.11?"#fbbf24":"#f87171";
   const isLast = cur===qs.length-1;
-  const handleFinishClick = () => { const unatt=qs.filter(qq=>!ans[qq.id]).length; if(unatt>0) setShowFinish(true); else finish(ans,bk); };
+  const handleFinishClick = () => { const unatt=qs.filter(qq=>!isAnswered(qq.id)).length; if(unatt>0) setShowFinish(true); else finish(ans,bk); };
 
   return (
     <div style={bg}>
@@ -2662,7 +2710,7 @@ export default function App() {
           <div style={{background:"#161b22",borderRadius:16,padding:24,maxWidth:300,width:"90%",border:"1px solid #fbbf2466",textAlign:"center"}}>
             <div style={{fontSize:32,marginBottom:8}}>⚠️</div>
             <div style={{color:"#f1f5f9",fontSize:15,fontWeight:700,marginBottom:8}}>Submit Quiz?</div>
-            <p style={{color:"#fbbf24",fontSize:13,marginBottom:18}}>{unattemptedCount} question{unattemptedCount!==1?"s":""} unattempted. Submit anyway?</p>
+            <p style={{color:"#fbbf24",fontSize:13,marginBottom:18}}>{unattemptedCount} question{unattemptedCount!==1?"s":""} still skipped/unattempted. Submit anyway?</p>
             <div style={{display:"flex",gap:10}}>
               <button onClick={()=>setShowFinish(false)} style={{flex:1,background:"#161b22",color:"#f1f5f9",border:"none",borderRadius:10,padding:11,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>Go Back</button>
               <button onClick={()=>{setShowFinish(false);finish(ans,bk);}} style={{flex:1,background:"#fbbf24",color:"#0f172a",border:"none",borderRadius:10,padding:11,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Submit</button>
@@ -2696,7 +2744,7 @@ export default function App() {
           <div style={{display:"flex",gap:5}}>
             <button onClick={()=>setShowPal(true)} style={{background:"#161b22",color:"#94a3b8",border:"1px solid #21262d",borderRadius:8,padding:"5px 9px",fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>⊞ {cur+1}/{qs.length}</button>
             <button onClick={()=>setShowRst(true)} style={{background:"#161b22",color:"#f87171",border:"1px solid #21262d",borderRadius:8,padding:"5px 9px",fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>↺</button>
-            <button onClick={handleFinishClick} style={{background:"#161b22",color:"#fbbf24",border:"1px solid #21262d",borderRadius:8,padding:"5px 9px",fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>🏁</button>
+            <button onClick={handleFinishClick} style={{background:"#161b22",color:"#fbbf24",border:"1px solid #fbbf2466",borderRadius:8,padding:"5px 10px",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",gap:4}}>🏁 Submit</button>
           </div>
           <div style={{textAlign:"center"}}>
             <div style={{color:"#64748b",fontSize:9,letterSpacing:1}}>ELAPSED</div>
