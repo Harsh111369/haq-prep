@@ -551,18 +551,16 @@ function SplashScreen({ user, onGoogle, onGuest, onContinue, onSignOut, loading,
 
       {/* Hero */}
       <div style={{flex:1,display:"flex",flexDirection:"column",justifyContent:"center",zIndex:1,paddingTop:40}}>
-        <div style={{display:"inline-flex",alignItems:"center",gap:7,border:"1.5px solid #21262d",borderRadius:99,padding:"7px 16px",marginBottom:14,width:"fit-content"}}>
-          <div style={{width:8,height:8,borderRadius:"50%",background:"#2dd4bf"}}/>
-          <span style={{color:"#2dd4bf",fontSize:11,fontWeight:700,letterSpacing:"1.5px"}}>AI-POWERED CBT PRACTICE</span>
-        </div>
-
-        {/* Animated Gemini badge — rotating gradient border + breathing glow + shimmer text */}
-        <div className="haq-gemini-wrap" style={{width:"fit-content",marginBottom:36,borderRadius:99,padding:1}}>
-          <div className="haq-gemini-pill" style={{display:"flex",alignItems:"center",gap:7,background:"#0d1117",borderRadius:99,padding:"7px 14px 7px 10px",position:"relative",overflow:"hidden"}}>
-            <svg className="haq-spark" width="13" height="13" viewBox="0 0 28 28" style={{position:"relative",zIndex:1}}>
+        {/* Merged eyebrow pill — CBT label + Gemini credit in one capsule, animated as a whole */}
+        <div className="haq-gemini-wrap" style={{width:"fit-content",marginBottom:36,borderRadius:99,padding:"1.5px"}}>
+          <div className="haq-gemini-pill" style={{display:"flex",alignItems:"center",gap:8,background:"#0d1117",borderRadius:99,padding:"7px 15px",position:"relative",overflow:"hidden"}}>
+            <div style={{width:6,height:6,borderRadius:"50%",background:"#2dd4bf",position:"relative",zIndex:1,flexShrink:0}}/>
+            <span style={{position:"relative",zIndex:1,fontSize:10,fontWeight:700,letterSpacing:"1px",color:"#2dd4bf",whiteSpace:"nowrap"}}>AI-POWERED CBT</span>
+            <div style={{position:"relative",zIndex:1,width:1,height:12,background:"#2c3542"}}/>
+            <svg className="haq-spark" width="12" height="12" viewBox="0 0 28 28" style={{position:"relative",zIndex:1}}>
               <path d="M14 3c0.8 3.3 1.9 6.3 3.4 8.2C18.9 13 21.4 14 24 15c-2.6 1-5.1 2-6.6 3.8C15.9 20.7 14.8 23.7 14 27c-0.8-3.3-1.9-6.3-3.4-8.2C9.1 17 6.6 16 4 15c2.6-1 5.1-2 6.6-3.8C11.9 9.3 13.1 6.3 14 3z" fill="#8ab4f8"/>
             </svg>
-            <span className="haq-gemini-text" style={{position:"relative",zIndex:1,fontSize:9.5,fontWeight:700,letterSpacing:"0.6px"}}>PERSONALIZED BY GEMINI</span>
+            <span className="haq-gemini-text" style={{position:"relative",zIndex:1,fontSize:10,fontWeight:700,letterSpacing:"1px",whiteSpace:"nowrap"}}>GEMINI</span>
           </div>
         </div>
 
