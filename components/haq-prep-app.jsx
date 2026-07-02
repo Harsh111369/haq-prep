@@ -442,6 +442,24 @@ const cloudDelete = async (uid, collection_name, key) => {
   await deleteDoc(doc(fb.db, "users", uid, collection_name, key));
 };
 
+// Write many documents (possibly across several sub-collections) as one or
+// more atomic batches, instead of firing dozens/hundreds of independent
+// setDoc() calls via Promise.all. Firestore batches cap at 500 operations,
+// so entries are chunked safely under that limit; each chunk is all-or-nothing.
+const cloudSaveBatch = async (uid, entries) => {
+  if (!entries.length) return;
+  const fb = await initFirebase();
+  const { doc, writeBatch } = fb;
+  const CHUNK = 450;
+  for (let i = 0; i < entries.length; i += CHUNK) {
+    const batch = writeBatch(fb.db);
+    entries.slice(i, i + CHUNK).forEach(({ collection_name, key, data }) => {
+      batch.set(doc(fb.db, "users", uid, collection_name, key), { data, updatedAt: Date.now() });
+    });
+    await batch.commit();
+  }
+};
+
 
 
 // (AuthScreen removed — auth buttons now live directly on SplashScreen)
@@ -803,6 +821,13 @@ function ExportModal({ set, onClose }) {
       setCopied(true); setTimeout(()=>setCopied(false), 2500);
     } catch { navigator.clipboard?.writeText(json).then(()=>{ setCopied(true); setTimeout(()=>setCopied(false),2500); }).catch(()=>{}); }
   };
+  const doDownload = () => {
+    const blob = new Blob([json], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const safeName = (set.title||"set").replace(/[^a-z0-9]+/gi,"-").toLowerCase();
+    const a = document.createElement("a"); a.href = url; a.download = `${safeName}.json`;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+  };
   return (
     <div style={{position:"fixed",inset:0,background:"#000000bb",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
       <div style={{background:"#161b22",borderRadius:20,padding:24,width:"100%",maxWidth:520,border:"1px solid #21262d",maxHeight:"90vh",display:"flex",flexDirection:"column"}}>
@@ -814,6 +839,7 @@ function ExportModal({ set, onClose }) {
         <textarea readOnly value={json} onFocus={e=>e.target.select()} style={{flex:1,minHeight:200,maxHeight:340,background:"#0d1117",border:"1px solid #21262d",borderRadius:10,padding:12,color:"#64748b",fontSize:10,fontFamily:"monospace",resize:"none",outline:"none",lineHeight:1.6,overflowY:"auto"}}/>
         <div style={{display:"flex",gap:10,marginTop:14}}>
           <button onClick={onClose} style={{flex:1,background:"#161b22",color:"#f1f5f9",border:"none",borderRadius:10,padding:12,fontSize:14,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>Close</button>
+          <button onClick={doDownload} style={{flex:1,background:"#161b22",color:"#2dd4bf",border:"1px solid #2dd4bf30",borderRadius:10,padding:12,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>💾 Download</button>
           <button onClick={doCopy} style={{flex:2,background:copied?"#0d2a1f":"linear-gradient(90deg,#0d9488,#2dd4bf)",color:copied?"#4ade80":"#0f172a",border:copied?"1px solid #4ade80":"none",borderRadius:10,padding:12,fontSize:14,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>{copied ? "✅ Copied!" : "📋 Copy JSON"}</button>
         </div>
       </div>
@@ -867,14 +893,17 @@ function BackupModal({ lib, rev, analytics, srs, folders, isCloud, user, onResto
       const mergedFolders   = { ...(folders||{}),    ...(pendingData.folders||{})  };
 
       if (isCloud && user) {
-        // Cloud mode: push merged data straight to Firestore so it survives logout/login
-        await Promise.all([
-          ...Object.entries(mergedLib).map(([k, v]) => cloudSave(user.uid, "library", k, v)),
-          ...Object.entries(mergedRev).map(([k, v]) => cloudSave(user.uid, "revision", k, v)),
-          ...Object.entries(mergedSrs).map(([k, v]) => cloudSave(user.uid, "srs", k, v)),
-          ...Object.entries(mergedFolders).map(([k, v]) => cloudSave(user.uid, "folders", k, v)),
-          cloudSave(user.uid, "analytics", "main", mergedAnalytics),
-        ]);
+        // Cloud mode: push merged data to Firestore as one or more atomic
+        // batches — either the whole restore lands, or none of it does,
+        // instead of ~200+ independent writes that could partially fail.
+        const entries = [
+          ...Object.entries(mergedLib).map(([k, v]) => ({ collection_name: "library", key: k, data: v })),
+          ...Object.entries(mergedRev).map(([k, v]) => ({ collection_name: "revision", key: k, data: v })),
+          ...Object.entries(mergedSrs).map(([k, v]) => ({ collection_name: "srs", key: k, data: v })),
+          ...Object.entries(mergedFolders).map(([k, v]) => ({ collection_name: "folders", key: k, data: v })),
+          { collection_name: "analytics", key: "main", data: mergedAnalytics },
+        ];
+        await cloudSaveBatch(user.uid, entries);
       } else {
         // Guest mode: localStorage is the source of truth
         saveS(LIB_KEY, mergedLib); saveS(REV_KEY, mergedRev); saveS(ANALYTICS_KEY, mergedAnalytics); saveS(SRS_KEY, mergedSrs); saveS(FOLDERS_KEY, mergedFolders);
@@ -1006,7 +1035,26 @@ function JsonModal({ onSave, onClose, folders, defaultFolderId }) {
   const [err, setErr] = useState("");
   const [folderId, setFolderId] = useState(defaultFolderId || "");
   const nameRef = useRef();
+  const fileRef = useRef();
   const folderList = Object.entries(folders||{});
+
+  const handleFileUpload = (e) => {
+    const file = e.target.files?.[0]; if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const text = String(ev.target.result||"");
+      setJson(text); setErr("");
+      // Auto-fill the name field from the file's own title, if the field is still empty.
+      try {
+        const parsed = JSON.parse(text.trim().replace(/```json|```/g,"").trim());
+        if (!Array.isArray(parsed) && parsed?.title && nameRef.current && !nameRef.current.value.trim()) {
+          nameRef.current.value = parsed.title;
+        }
+      } catch { /* leave name field as-is; doSaveJson will surface any real parse error */ }
+    };
+    reader.readAsText(file);
+    e.target.value = ""; // allow re-selecting the same file again later
+  };
 
   const doSaveJson = () => {
     setErr("");
@@ -1059,6 +1107,10 @@ function JsonModal({ onSave, onClose, folders, defaultFolderId }) {
           <>
             <input ref={nameRef} placeholder="Set name (e.g. Plant Pathology Part-10)" style={{width:"100%",background:"#0d1117",border:"1px solid #21262d",borderRadius:10,padding:"10px 12px",color:"#f1f5f9",fontSize:13,fontFamily:"inherit",boxSizing:"border-box",outline:"none",marginBottom:12}}/>
             {folderPicker}
+            <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}>
+              <input ref={fileRef} type="file" accept=".json" onChange={handleFileUpload} style={{flex:1,background:"#0d1117",border:"1px solid #21262d",borderRadius:10,padding:"10px 12px",color:"#94a3b8",fontSize:12,fontFamily:"inherit",boxSizing:"border-box",cursor:"pointer"}}/>
+              <span style={{color:"#475569",fontSize:11,flexShrink:0}}>or paste below</span>
+            </div>
             <textarea value={json} onChange={e=>setJson(e.target.value)} placeholder="Paste your MCQ JSON here…" style={{width:"100%",height:200,background:"#0d1117",border:"1px solid #21262d",borderRadius:10,padding:12,color:"#f1f5f9",fontSize:12,fontFamily:"monospace",resize:"vertical",boxSizing:"border-box",outline:"none",marginBottom:err?8:12}}/>
             {err && <div style={{background:"#2d0a0a",border:"1px solid #7f1d1d",borderRadius:10,padding:"10px 12px",color:"#fca5a5",fontSize:12,marginBottom:12}}>⚠️ {err}</div>}
             <div style={{display:"flex",gap:10}}>
@@ -1514,6 +1566,13 @@ export default function App() {
   // Maps each in-app screen to the screen the back button should return to.
   // Screens not listed here (e.g. "library") are treated as the app root.
   const BACK_PARENT = { home: "library", analytics: "library", settings: "library", quiz: "library", result: "library", review: "result", folder: "library" };
+  // appScreen has its own, higher-level layer above the screen map: "about"
+  // (the Welcome/Guide page — reached both on first-run onboarding and by
+  // revisiting via the header "Back"/"Full Guide" buttons) previously had no
+  // parent mapping at all, so a back press there fell straight through to
+  // real browser history — closing the app, or unwinding all the way to the
+  // initial page load (appScreen's default state, "splash").
+  const APP_BACK_PARENT = { about: "app" };
 
   // Seed a base history entry on mount so the first back press is captured.
   useEffect(() => {
@@ -1527,18 +1586,26 @@ export default function App() {
   useEffect(() => {
     if (typeof window === "undefined") return;
     if (authMode === null || authMode === "auth") return;
-    const isRoot = !BACK_PARENT[screen];
+    const isRoot = appScreen !== "app" ? !APP_BACK_PARENT[appScreen] : !BACK_PARENT[screen];
     const hasBuffer = window.history.state && window.history.state.haqBuffer;
     if (!isRoot && !hasBuffer) {
       window.history.pushState({ haqBuffer: true }, "");
     }
-  }, [screen, authMode]);
+  }, [screen, appScreen, authMode]);
 
   // Intercept back navigation: move to the logical parent screen.
+  const appScreenRef = useRef(appScreen);
+  const screenRef = useRef(screen);
+  appScreenRef.current = appScreen;
+  screenRef.current = screen;
   useEffect(() => {
     if (typeof window === "undefined") return;
     const onPop = () => {
-      setScreen(prev => BACK_PARENT[prev] || prev);
+      if (appScreenRef.current !== "app") {
+        setAppScreen(prevApp => APP_BACK_PARENT[prevApp] || prevApp);
+      } else {
+        setScreen(prevScreen => BACK_PARENT[prevScreen] || prevScreen);
+      }
     };
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
@@ -2098,7 +2165,6 @@ export default function App() {
             <button onClick={()=>{setActiveSet(set);setActiveKey(key);setTopic("All Topics");setMode("full");setQCount("All");setScreen("home");}} style={{background:"linear-gradient(90deg,#0d9488,#2dd4bf)",color:"#0f172a",border:"none",borderRadius:8,padding:"8px 14px",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Practice →</button>
             <button onClick={()=>setRenameKey(key)} style={{background:"#161b22",color:"#60a5fa",border:"none",borderRadius:8,padding:"5px 14px",fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>✏️ Rename</button>
             <button onClick={()=>setMoveSetKey(key)} style={{background:"#161b22",color:"#fbbf24",border:"none",borderRadius:8,padding:"5px 14px",fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>📁 Move</button>
-            <button onClick={()=>setShareSet(set)} style={{background:"#161b22",color:"#38bdf8",border:"none",borderRadius:8,padding:"5px 14px",fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>🔗 Share Link</button>
             <button onClick={()=>setExportSet(set)} style={{background:"#161b22",color:"#2dd4bf",border:"1px solid #2dd4bf30",borderRadius:8,padding:"5px 14px",fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>⬇ Export</button>
             <button onClick={()=>setDelKey(key)} style={{background:"#161b22",color:"#f87171",border:"none",borderRadius:8,padding:"5px 14px",fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>🗑️ Delete</button>
           </div>
@@ -2427,6 +2493,18 @@ export default function App() {
                 </div>
               </div>
               <div style={{display:"flex",gap:6,flexShrink:0}}>
+                <button onClick={()=>{
+                  const folderKeys = folderSetEntries.map(([key])=>key);
+                  const filteredLib = Object.fromEntries(folderKeys.map(k=>[k,(lib||{})[k]]));
+                  const filteredRev = Object.fromEntries(folderKeys.filter(k=>(rev||{})[k]).map(k=>[k,(rev||{})[k]]));
+                  const filteredSrs = Object.fromEntries(folderKeys.filter(k=>(srs||{})[k]).map(k=>[k,(srs||{})[k]]));
+                  const backup = { backup_version:2, app:"HAQ PREP", exported_at:new Date().toISOString().slice(0,10), sets_count:folderKeys.length, library:filteredLib, revision:filteredRev, analytics:{}, srs:filteredSrs, folders:{ [activeFolderKey]: folder } };
+                  const blob = new Blob([JSON.stringify(backup,null,2)],{type:"application/json"});
+                  const url = URL.createObjectURL(blob);
+                  const safeName = (folder.name||"folder").replace(/[^a-z0-9]+/gi,"-").toLowerCase();
+                  const a = document.createElement("a"); a.href=url; a.download=`haqprep-${safeName}-${new Date().toISOString().slice(0,10)}.json`;
+                  document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+                }} style={{background:"#0d1117",color:"#2dd4bf",border:"1px solid #2dd4bf30",borderRadius:8,padding:"7px 10px",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>⬇ Export</button>
                 <button onClick={()=>setRenameFolderKey(activeFolderKey)} style={{background:"#0d1117",color:"#60a5fa",border:"1px solid #21262d",borderRadius:8,padding:"7px 10px",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>✏️ Rename</button>
                 <button onClick={()=>setDelFolderKey(activeFolderKey)} style={{background:"#0d1117",color:"#f87171",border:"1px solid #21262d",borderRadius:8,padding:"7px 10px",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>🗑️ Delete</button>
               </div>
