@@ -2881,20 +2881,19 @@ export default function App() {
                       <p style={{color:"#93c5fd",fontSize:12,lineHeight:1.6,margin:0}}>{c.explainText}</p>
                     </div>
                   )}
-                  {!c.explainText && !c.chatOpen && (
-                    <div style={{display:"flex",gap:8}}>
-                      <button onClick={()=>aiExplainFor(q,qa)} disabled={c.explainLoading} style={{background:"none",border:"1px solid #60a5fa55",color:"#60a5fa",borderRadius:8,padding:"6px 12px",fontSize:11,fontWeight:700,cursor:c.explainLoading?"wait":"pointer",fontFamily:"inherit"}}>
-                        {c.explainLoading?"🤖 Thinking…":"🤖 Explain more"}
-                      </button>
-                      <button onClick={()=>aiChatUpdate(q.id,{chatOpen:true})} style={{background:"none",border:"1px solid #a78bfa55",color:"#a78bfa",borderRadius:8,padding:"6px 12px",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
-                        💬 Ask a doubt
-                      </button>
+                  {(!c.explainText || !c.chatOpen) && (
+                    <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                      {!c.explainText && (
+                        <button onClick={()=>aiExplainFor(q,qa)} disabled={c.explainLoading} style={{background:"none",border:"1px solid #60a5fa55",color:"#60a5fa",borderRadius:8,padding:"6px 12px",fontSize:11,fontWeight:700,cursor:c.explainLoading?"wait":"pointer",fontFamily:"inherit"}}>
+                          {c.explainLoading?"🤖 Thinking…":"🤖 Explain more"}
+                        </button>
+                      )}
+                      {!c.chatOpen && (
+                        <button onClick={()=>aiChatUpdate(q.id,{chatOpen:true})} style={{background:"none",border:"1px solid #a78bfa55",color:"#a78bfa",borderRadius:8,padding:"6px 12px",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
+                          {c.explainText ? "💬 Ask a follow-up doubt" : "💬 Ask a doubt"}
+                        </button>
+                      )}
                     </div>
-                  )}
-                  {c.explainText && !c.chatOpen && (
-                    <button onClick={()=>aiChatUpdate(q.id,{chatOpen:true})} style={{background:"none",border:"1px solid #a78bfa55",color:"#a78bfa",borderRadius:8,padding:"6px 12px",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
-                      💬 Ask a follow-up doubt
-                    </button>
                   )}
                   {c.explainError && <div style={{color:"#fca5a5",fontSize:11,marginTop:4}}>⚠️ {c.explainError}</div>}
                   {c.chatOpen && (
