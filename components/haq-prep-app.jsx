@@ -442,6 +442,24 @@ const cloudDelete = async (uid, collection_name, key) => {
   await deleteDoc(doc(fb.db, "users", uid, collection_name, key));
 };
 
+// Write many documents (possibly across several sub-collections) as one or
+// more atomic batches, instead of firing dozens/hundreds of independent
+// setDoc() calls via Promise.all. Firestore batches cap at 500 operations,
+// so entries are chunked safely under that limit; each chunk is all-or-nothing.
+const cloudSaveBatch = async (uid, entries) => {
+  if (!entries.length) return;
+  const fb = await initFirebase();
+  const { doc, writeBatch } = fb;
+  const CHUNK = 450;
+  for (let i = 0; i < entries.length; i += CHUNK) {
+    const batch = writeBatch(fb.db);
+    entries.slice(i, i + CHUNK).forEach(({ collection_name, key, data }) => {
+      batch.set(doc(fb.db, "users", uid, collection_name, key), { data, updatedAt: Date.now() });
+    });
+    await batch.commit();
+  }
+};
+
 
 
 // (AuthScreen removed — auth buttons now live directly on SplashScreen)
@@ -867,14 +885,17 @@ function BackupModal({ lib, rev, analytics, srs, folders, isCloud, user, onResto
       const mergedFolders   = { ...(folders||{}),    ...(pendingData.folders||{})  };
 
       if (isCloud && user) {
-        // Cloud mode: push merged data straight to Firestore so it survives logout/login
-        await Promise.all([
-          ...Object.entries(mergedLib).map(([k, v]) => cloudSave(user.uid, "library", k, v)),
-          ...Object.entries(mergedRev).map(([k, v]) => cloudSave(user.uid, "revision", k, v)),
-          ...Object.entries(mergedSrs).map(([k, v]) => cloudSave(user.uid, "srs", k, v)),
-          ...Object.entries(mergedFolders).map(([k, v]) => cloudSave(user.uid, "folders", k, v)),
-          cloudSave(user.uid, "analytics", "main", mergedAnalytics),
-        ]);
+        // Cloud mode: push merged data to Firestore as one or more atomic
+        // batches — either the whole restore lands, or none of it does,
+        // instead of ~200+ independent writes that could partially fail.
+        const entries = [
+          ...Object.entries(mergedLib).map(([k, v]) => ({ collection_name: "library", key: k, data: v })),
+          ...Object.entries(mergedRev).map(([k, v]) => ({ collection_name: "revision", key: k, data: v })),
+          ...Object.entries(mergedSrs).map(([k, v]) => ({ collection_name: "srs", key: k, data: v })),
+          ...Object.entries(mergedFolders).map(([k, v]) => ({ collection_name: "folders", key: k, data: v })),
+          { collection_name: "analytics", key: "main", data: mergedAnalytics },
+        ];
+        await cloudSaveBatch(user.uid, entries);
       } else {
         // Guest mode: localStorage is the source of truth
         saveS(LIB_KEY, mergedLib); saveS(REV_KEY, mergedRev); saveS(ANALYTICS_KEY, mergedAnalytics); saveS(SRS_KEY, mergedSrs); saveS(FOLDERS_KEY, mergedFolders);
