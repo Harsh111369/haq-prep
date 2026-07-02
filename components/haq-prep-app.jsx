@@ -2086,6 +2086,14 @@ export default function App() {
     setAns(p=>({...p,[qs[cur].id]:{selected:null,correct:false,skipped:true}}));
     setRevealed(true);
   };
+  const doUndo = () => {
+    if (!revealed) return;
+    const qid = qs[cur]?.id;
+    setAns(p=>{ const n={...p}; delete n[qid]; return n; });
+    setAiChat(p=>{ const n={...p}; delete n[qid]; return n; }); // stale explanation was tied to the old selection
+    setRevealed(false);
+    setTLeft(timerOn?timerSec:0);
+  };
   const goTo = idx => { setCur(idx); setRevealed(!!ans[qs[idx]?.id]); if(!ans[qs[idx]?.id]) setTLeft(timerSec); setShowPal(false); };
   const doNext = () => { const n=cur+1; if(n<qs.length){setCur(n);setRevealed(!!ans[qs[n]?.id]);if(!ans[qs[n]?.id])setTLeft(timerSec);}else finish(ans,bk); };
   const doPrev = () => { const p=cur-1; if(p>=0){setCur(p);setRevealed(!!ans[qs[p]?.id]);if(!ans[qs[p]?.id])setTLeft(timerSec);} };
@@ -2870,6 +2878,9 @@ export default function App() {
               {qa?.skipped?"⏭ SKIPPED — ":qa?.correct?"✓ CORRECT — ":"✗ INCORRECT — "}💡 EXPLANATION
             </div>
             <p style={{color:qa?.correct?"#86efac":"#fca5a5",fontSize:12,lineHeight:1.6,margin:"0 0 10px"}}>{q.explanation||"No explanation provided."}</p>
+            <button onClick={doUndo} style={{background:"none",border:"1px solid #64748b55",color:"#94a3b8",borderRadius:8,padding:"6px 12px",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit",marginBottom:8}}>
+              ↺ Change answer
+            </button>
             {/* ── AI Doubt Chat ─────────────────────────────────────────── */}
             {(() => {
               const c = aiChat[q.id] || {};
