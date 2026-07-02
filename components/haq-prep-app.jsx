@@ -442,6 +442,24 @@ const cloudDelete = async (uid, collection_name, key) => {
   await deleteDoc(doc(fb.db, "users", uid, collection_name, key));
 };
 
+// Write many documents (possibly across several sub-collections) as one or
+// more atomic batches, instead of firing dozens/hundreds of independent
+// setDoc() calls via Promise.all. Firestore batches cap at 500 operations,
+// so entries are chunked safely under that limit; each chunk is all-or-nothing.
+const cloudSaveBatch = async (uid, entries) => {
+  if (!entries.length) return;
+  const fb = await initFirebase();
+  const { doc, writeBatch } = fb;
+  const CHUNK = 450;
+  for (let i = 0; i < entries.length; i += CHUNK) {
+    const batch = writeBatch(fb.db);
+    entries.slice(i, i + CHUNK).forEach(({ collection_name, key, data }) => {
+      batch.set(doc(fb.db, "users", uid, collection_name, key), { data, updatedAt: Date.now() });
+    });
+    await batch.commit();
+  }
+};
+
 
 
 // (AuthScreen removed — auth buttons now live directly on SplashScreen)
@@ -510,22 +528,40 @@ function SplashScreen({ user, onGoogle, onGuest, onContinue, onSignOut, loading,
       <div style={{position:"absolute",top:-60,right:-60,width:320,height:320,background:"radial-gradient(circle, #2dd4bf20 0%, transparent 70%)",pointerEvents:"none"}}/>
       <div style={{position:"absolute",bottom:80,left:-40,width:200,height:200,background:"radial-gradient(circle, #0d948815 0%, transparent 70%)",pointerEvents:"none"}}/>
 
+      {/* Wave ribbon — ambient background animation, does not affect layout */}
+      <div style={{position:"absolute",left:0,right:0,bottom:0,height:260,zIndex:0,pointerEvents:"none",overflow:"hidden"}}>
+        <svg className="haq-wave" viewBox="0 0 800 200" preserveAspectRatio="none" style={{position:"absolute",bottom:0,left:0,width:"200%",height:"100%",animation:"haqWaveScroll 14s linear infinite"}}>
+          <path d="M0,100 C100,60 200,140 300,100 C400,60 500,140 600,100 C700,60 800,140 900,100 C1000,60 1100,140 1200,100 C1300,60 1400,140 1500,100 C1600,60 1700,140 1800,100 L1600,200 L0,200 Z" fill="#2dd4bf" opacity="0.12"/>
+        </svg>
+        <svg className="haq-wave haq-wave-2" viewBox="0 0 800 200" preserveAspectRatio="none" style={{position:"absolute",bottom:0,left:0,width:"200%",height:"100%",opacity:0.5,animation:"haqWaveScroll 20s linear infinite reverse"}}>
+          <path d="M0,120 C120,80 220,160 340,120 C460,80 560,160 680,120 C800,80 900,160 1020,120 C1140,80 1240,160 1360,120 C1480,80 1580,160 1700,120 L1600,200 L0,200 Z" fill="#8ab4f8" opacity="0.10"/>
+        </svg>
+      </div>
+
       {/* Top bar */}
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",zIndex:1}}>
         <div style={{display:"flex",alignItems:"center",gap:12}}>
           <div style={{width:56,height:56,borderRadius:14,overflow:"hidden",display:"flex",alignItems:"center",justifyContent:"center",boxShadow:"0 0 20px #2dd4bf40"}}>
             <img src="/icon-192.png" alt="HAQ PREP logo" width={56} height={56} style={{width:"100%",height:"100%",objectFit:"cover"}}/>
           </div>
-          <span style={{color:"#f1f5f9",fontSize:19,fontWeight:700,letterSpacing:"0.3px"}}>HAQ PREP</span>
+          <span style={{fontFamily:"'Courier New',monospace",color:"#f1f5f9",fontSize:19,fontWeight:700,letterSpacing:"-0.3px"}}>haq<span style={{color:"#2dd4bf"}}>/</span>prep</span>
         </div>
         <div style={{background:"#161b22",border:"1px solid #21262d",borderRadius:8,padding:"5px 12px",color:"#94a3b8",fontSize:12,fontWeight:600}}>v10.1</div>
       </div>
 
       {/* Hero */}
       <div style={{flex:1,display:"flex",flexDirection:"column",justifyContent:"center",zIndex:1,paddingTop:40}}>
-        <div style={{display:"inline-flex",alignItems:"center",gap:7,border:"1.5px solid #21262d",borderRadius:99,padding:"7px 16px",marginBottom:36,width:"fit-content"}}>
-          <div style={{width:8,height:8,borderRadius:"50%",background:"#2dd4bf"}}/>
-          <span style={{color:"#2dd4bf",fontSize:11,fontWeight:700,letterSpacing:"1.5px"}}>AI-POWERED CBT PRACTICE</span>
+        {/* Merged eyebrow pill — CBT label + Gemini credit in one capsule, animated as a whole */}
+        <div className="haq-gemini-wrap" style={{width:"fit-content",marginBottom:36,borderRadius:99,padding:"1.5px"}}>
+          <div className="haq-gemini-pill" style={{display:"flex",alignItems:"center",gap:8,background:"#0d1117",borderRadius:99,padding:"7px 15px",position:"relative",overflow:"hidden"}}>
+            <div style={{width:6,height:6,borderRadius:"50%",background:"#2dd4bf",position:"relative",zIndex:1,flexShrink:0}}/>
+            <span style={{position:"relative",zIndex:1,fontSize:10,fontWeight:700,letterSpacing:"1px",color:"#2dd4bf",whiteSpace:"nowrap"}}>AI-POWERED CBT</span>
+            <div style={{position:"relative",zIndex:1,width:1,height:12,background:"#2c3542"}}/>
+            <svg className="haq-spark" width="12" height="12" viewBox="0 0 28 28" style={{position:"relative",zIndex:1}}>
+              <path d="M14 3c0.8 3.3 1.9 6.3 3.4 8.2C18.9 13 21.4 14 24 15c-2.6 1-5.1 2-6.6 3.8C15.9 20.7 14.8 23.7 14 27c-0.8-3.3-1.9-6.3-3.4-8.2C9.1 17 6.6 16 4 15c2.6-1 5.1-2 6.6-3.8C11.9 9.3 13.1 6.3 14 3z" fill="#8ab4f8"/>
+            </svg>
+            <span className="haq-gemini-text" style={{position:"relative",zIndex:1,fontSize:10,fontWeight:700,letterSpacing:"1px",whiteSpace:"nowrap"}}>GEMINI</span>
+          </div>
         </div>
 
         <div style={{marginBottom:44}}>
@@ -584,7 +620,7 @@ function SplashScreen({ user, onGoogle, onGuest, onContinue, onSignOut, loading,
             🔧 Firebase not set up — Google sign-in unavailable. Guest mode works fine.
           </div>
         )}
-        <div style={{color:"#334155",fontSize:11,textAlign:"center",marginTop:4}}>No account needed · works offline</div>
+        <div style={{color:"#334155",fontSize:11,textAlign:"center",marginTop:4}}>No account needed</div>
       </div>
 
       {/* Footer */}
@@ -593,7 +629,38 @@ function SplashScreen({ user, onGoogle, onGuest, onContinue, onSignOut, loading,
         <span style={{color:"#475569",fontSize:12}}>By <span style={{color:"#2dd4bf",fontWeight:600}}>Harsh Anand</span> · Built with AI</span>
       </div>
 
-      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      <style>{`
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        @keyframes haqWaveScroll { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+
+        .haq-gemini-wrap {
+          background: conic-gradient(from var(--haq-angle, 0deg), #2dd4bf, #8ab4f8, #a78bfa, #2dd4bf);
+          animation: haqRotateBorder 4s linear infinite;
+        }
+        @property --haq-angle { syntax: '<angle>'; initial-value: 0deg; inherits: false; }
+        @keyframes haqRotateBorder { to { --haq-angle: 360deg; } }
+
+        .haq-gemini-pill::before {
+          content: '';
+          position: absolute; inset: -8px;
+          background: radial-gradient(circle, rgba(138,180,248,0.25), transparent 70%);
+          animation: haqBreathe 2.6s ease-in-out infinite;
+          z-index: 0;
+        }
+        @keyframes haqBreathe { 0%,100% { opacity:0.35; transform:scale(0.9); } 50% { opacity:0.85; transform:scale(1.15); } }
+
+        .haq-spark { animation: haqSparkle 2.6s ease-in-out infinite; transform-origin: center; }
+        @keyframes haqSparkle { 0%,100% { transform:scale(1) rotate(0deg); filter:brightness(1); } 50% { transform:scale(1.18) rotate(8deg); filter:brightness(1.4); } }
+
+        .haq-gemini-text {
+          background: linear-gradient(90deg, #8ab4f8, #2dd4bf, #a78bfa, #8ab4f8);
+          background-size: 300% 100%;
+          -webkit-background-clip: text; background-clip: text; color: transparent;
+          animation: haqShimmer 3.5s linear infinite;
+        }
+        @keyframes haqShimmer { 0% { background-position:0% 50%; } 100% { background-position:300% 50%; } }
+      `}</style>
     </div>
   );
 }
@@ -603,6 +670,7 @@ function AboutScreen({ onStart, onHome }) {
   const [copied, setCopied] = useState(false);
   const [skillDownloaded, setSkillDownloaded] = useState(false);
   const [promptOpen, setPromptOpen] = useState(false);
+  const [howToOpen, setHowToOpen] = useState(false);
   const copyPrompt = () => {
     try {
       const ta = document.createElement("textarea");
@@ -667,8 +735,11 @@ function AboutScreen({ onStart, onHome }) {
           </div>
         </div>
         <div style={{background:"#161b22",borderRadius:16,padding:"18px 20px",border:"1px solid #21262d",marginBottom:14}}>
-          <div style={{color:"#94a3b8",fontSize:11,fontWeight:700,letterSpacing:1,marginBottom:18}}>HOW TO USE</div>
-          {[["1","Open Claude.ai and upload your PDF or paste your notes"],["2","Copy the prompt below → paste it in Claude with your material"],["3","Copy the JSON output Claude gives you"],["4","Come back here → Import JSON → Name your set → Save"],["5","Hit Practice and attempt like a real exam 🎯"]].map(([n,text],i,arr)=>(
+          <button onClick={()=>setHowToOpen(o=>!o)} style={{width:"100%",display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,background:"none",border:"none",padding:0,cursor:"pointer",fontFamily:"inherit",marginBottom:howToOpen?18:0}}>
+            <div style={{color:"#94a3b8",fontSize:11,fontWeight:700,letterSpacing:1}}>HOW TO USE</div>
+            <span style={{display:"inline-flex",alignItems:"center",gap:6,color:"#2dd4bf",fontSize:11,fontWeight:700,whiteSpace:"nowrap"}}>{howToOpen?"Tap to collapse":"Tap to expand"}<span style={{fontSize:9}}>{howToOpen?"▲":"▼"}</span></span>
+          </button>
+          {howToOpen && [["1","Open Claude.ai and upload your PDF or paste your notes"],["2","Copy the prompt below → paste it in Claude with your material"],["3","Copy the JSON output Claude gives you"],["4","Come back here → Import JSON → Name your set → Save"],["5","Hit Practice and attempt like a real exam 🎯"]].map(([n,text],i,arr)=>(
             <div key={n} style={{display:"flex",gap:14,alignItems:"flex-start",position:"relative",paddingBottom:i===arr.length-1?0:18}}>
               {i!==arr.length-1 && <div style={{position:"absolute",left:13,top:28,bottom:0,width:2,background:"#2dd4bf30"}}/>}
               <div style={{width:28,height:28,minWidth:28,borderRadius:"50%",background:"#0d2a1f",border:"1.5px solid #2dd4bf",color:"#2dd4bf",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:800,flexShrink:0,zIndex:1,boxShadow:"0 0 12px #2dd4bf25"}}>{n}</div>
@@ -758,18 +829,6 @@ function AboutScreen({ onStart, onHome }) {
 }
 
 // ── Review Card ───────────────────────────────────────────────────────────────
-// ── Gemini AI helper ─────────────────────────────────────────────────────────
-async function askGemini(action, payload) {
-  const res = await fetch("/api/gemini", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ action, payload }),
-  });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || "AI request failed.");
-  return data;
-}
-
 function ReviewCard({ q, a }) {
   const [open, setOpen] = useState(false);
   const col = a?.correct ? "#4ade80" : a?.skipped ? "#fbbf24" : "#f87171";
@@ -811,6 +870,13 @@ function ExportModal({ set, onClose }) {
       setCopied(true); setTimeout(()=>setCopied(false), 2500);
     } catch { navigator.clipboard?.writeText(json).then(()=>{ setCopied(true); setTimeout(()=>setCopied(false),2500); }).catch(()=>{}); }
   };
+  const doDownload = () => {
+    const blob = new Blob([json], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const safeName = (set.title||"set").replace(/[^a-z0-9]+/gi,"-").toLowerCase();
+    const a = document.createElement("a"); a.href = url; a.download = `${safeName}.json`;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+  };
   return (
     <div style={{position:"fixed",inset:0,background:"#000000bb",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
       <div style={{background:"#161b22",borderRadius:20,padding:24,width:"100%",maxWidth:520,border:"1px solid #21262d",maxHeight:"90vh",display:"flex",flexDirection:"column"}}>
@@ -822,6 +888,7 @@ function ExportModal({ set, onClose }) {
         <textarea readOnly value={json} onFocus={e=>e.target.select()} style={{flex:1,minHeight:200,maxHeight:340,background:"#0d1117",border:"1px solid #21262d",borderRadius:10,padding:12,color:"#64748b",fontSize:10,fontFamily:"monospace",resize:"none",outline:"none",lineHeight:1.6,overflowY:"auto"}}/>
         <div style={{display:"flex",gap:10,marginTop:14}}>
           <button onClick={onClose} style={{flex:1,background:"#161b22",color:"#f1f5f9",border:"none",borderRadius:10,padding:12,fontSize:14,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>Close</button>
+          <button onClick={doDownload} style={{flex:1,background:"#161b22",color:"#2dd4bf",border:"1px solid #2dd4bf30",borderRadius:10,padding:12,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>💾 Download</button>
           <button onClick={doCopy} style={{flex:2,background:copied?"#0d2a1f":"linear-gradient(90deg,#0d9488,#2dd4bf)",color:copied?"#4ade80":"#0f172a",border:copied?"1px solid #4ade80":"none",borderRadius:10,padding:12,fontSize:14,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>{copied ? "✅ Copied!" : "📋 Copy JSON"}</button>
         </div>
       </div>
@@ -875,14 +942,17 @@ function BackupModal({ lib, rev, analytics, srs, folders, isCloud, user, onResto
       const mergedFolders   = { ...(folders||{}),    ...(pendingData.folders||{})  };
 
       if (isCloud && user) {
-        // Cloud mode: push merged data straight to Firestore so it survives logout/login
-        await Promise.all([
-          ...Object.entries(mergedLib).map(([k, v]) => cloudSave(user.uid, "library", k, v)),
-          ...Object.entries(mergedRev).map(([k, v]) => cloudSave(user.uid, "revision", k, v)),
-          ...Object.entries(mergedSrs).map(([k, v]) => cloudSave(user.uid, "srs", k, v)),
-          ...Object.entries(mergedFolders).map(([k, v]) => cloudSave(user.uid, "folders", k, v)),
-          cloudSave(user.uid, "analytics", "main", mergedAnalytics),
-        ]);
+        // Cloud mode: push merged data to Firestore as one or more atomic
+        // batches — either the whole restore lands, or none of it does,
+        // instead of ~200+ independent writes that could partially fail.
+        const entries = [
+          ...Object.entries(mergedLib).map(([k, v]) => ({ collection_name: "library", key: k, data: v })),
+          ...Object.entries(mergedRev).map(([k, v]) => ({ collection_name: "revision", key: k, data: v })),
+          ...Object.entries(mergedSrs).map(([k, v]) => ({ collection_name: "srs", key: k, data: v })),
+          ...Object.entries(mergedFolders).map(([k, v]) => ({ collection_name: "folders", key: k, data: v })),
+          { collection_name: "analytics", key: "main", data: mergedAnalytics },
+        ];
+        await cloudSaveBatch(user.uid, entries);
       } else {
         // Guest mode: localStorage is the source of truth
         saveS(LIB_KEY, mergedLib); saveS(REV_KEY, mergedRev); saveS(ANALYTICS_KEY, mergedAnalytics); saveS(SRS_KEY, mergedSrs); saveS(FOLDERS_KEY, mergedFolders);
@@ -1010,11 +1080,29 @@ function ImportLinkModal({ data, onImport, onCancel }) {
 function JsonModal({ onSave, onClose, folders, defaultFolderId }) {
   const [tab, setTab] = useState("json");
   const [json, setJson] = useState("");
-  const [code, setCode] = useState("");
   const [err, setErr] = useState("");
   const [folderId, setFolderId] = useState(defaultFolderId || "");
   const nameRef = useRef();
+  const fileRef = useRef();
   const folderList = Object.entries(folders||{});
+
+  const handleFileUpload = (e) => {
+    const file = e.target.files?.[0]; if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const text = String(ev.target.result||"");
+      setJson(text); setErr("");
+      // Auto-fill the name field from the file's own title, if the field is still empty.
+      try {
+        const parsed = JSON.parse(text.trim().replace(/```json|```/g,"").trim());
+        if (!Array.isArray(parsed) && parsed?.title && nameRef.current && !nameRef.current.value.trim()) {
+          nameRef.current.value = parsed.title;
+        }
+      } catch { /* leave name field as-is; doSaveJson will surface any real parse error */ }
+    };
+    reader.readAsText(file);
+    e.target.value = ""; // allow re-selecting the same file again later
+  };
 
   const doSaveJson = () => {
     setErr("");
@@ -1029,14 +1117,6 @@ function JsonModal({ onSave, onClose, folders, defaultFolderId }) {
       if(!qs.length) throw new Error("No questions found");
       onSave({ title, questions: qs.map((q,i)=>norm(q,i)), savedAt: Date.now(), count: qs.length, folderId: folderId||null });
     } catch(e) { setErr(e.message); }
-  };
-
-  const doSaveCode = () => {
-    setErr("");
-    const decoded = decodeSet(code);
-    if (!decoded) { setErr("Invalid share code."); return; }
-    if (!decoded.questions?.length) { setErr("No questions found in this code."); return; }
-    onSave({ title: decoded.title||"Imported Set", questions: decoded.questions, savedAt: Date.now(), count: decoded.questions.length, folderId: folderId||null });
   };
 
   const folderPicker = (
@@ -1061,29 +1141,21 @@ function JsonModal({ onSave, onClose, folders, defaultFolderId }) {
           <button onClick={onClose} style={{background:"#161b22",color:"#94a3b8",border:"none",borderRadius:8,padding:"6px 12px",fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>✕</button>
         </div>
         <div style={{display:"flex",gap:6,marginBottom:16,background:"#0d1117",borderRadius:10,padding:4}}>
-          {tabBtn("json","📋 Paste JSON")} {tabBtn("code","🔗 Share Code")}
+          {tabBtn("json","📋 Paste JSON")}
         </div>
         {tab === "json" && (
           <>
             <input ref={nameRef} placeholder="Set name (e.g. Plant Pathology Part-10)" style={{width:"100%",background:"#0d1117",border:"1px solid #21262d",borderRadius:10,padding:"10px 12px",color:"#f1f5f9",fontSize:13,fontFamily:"inherit",boxSizing:"border-box",outline:"none",marginBottom:12}}/>
             {folderPicker}
+            <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}>
+              <input ref={fileRef} type="file" accept=".json" onChange={handleFileUpload} style={{flex:1,background:"#0d1117",border:"1px solid #21262d",borderRadius:10,padding:"10px 12px",color:"#94a3b8",fontSize:12,fontFamily:"inherit",boxSizing:"border-box",cursor:"pointer"}}/>
+              <span style={{color:"#475569",fontSize:11,flexShrink:0}}>or paste below</span>
+            </div>
             <textarea value={json} onChange={e=>setJson(e.target.value)} placeholder="Paste your MCQ JSON here…" style={{width:"100%",height:200,background:"#0d1117",border:"1px solid #21262d",borderRadius:10,padding:12,color:"#f1f5f9",fontSize:12,fontFamily:"monospace",resize:"vertical",boxSizing:"border-box",outline:"none",marginBottom:err?8:12}}/>
             {err && <div style={{background:"#2d0a0a",border:"1px solid #7f1d1d",borderRadius:10,padding:"10px 12px",color:"#fca5a5",fontSize:12,marginBottom:12}}>⚠️ {err}</div>}
             <div style={{display:"flex",gap:10}}>
               <button onClick={onClose} style={{flex:1,background:"#161b22",color:"#f1f5f9",border:"none",borderRadius:10,padding:12,fontSize:14,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>Cancel</button>
               <button onClick={doSaveJson} disabled={!json.trim()} style={{flex:2,background:json.trim()?"#4ade80":"#1e293b",color:json.trim()?"#0f172a":"#475569",border:"none",borderRadius:10,padding:12,fontSize:14,fontWeight:700,cursor:json.trim()?"pointer":"not-allowed",fontFamily:"inherit"}}>💾 Save Set</button>
-            </div>
-          </>
-        )}
-        {tab === "code" && (
-          <>
-            <div style={{background:"#0f1e3a",border:"1px solid #1e3a6e",borderRadius:10,padding:"10px 12px",color:"#93c5fd",fontSize:11,marginBottom:14,lineHeight:1.7}}>🔗 Paste the share code your classmate sent you.</div>
-            {folderPicker}
-            <textarea value={code} onChange={e=>setCode(e.target.value)} placeholder="Paste share code here…" style={{width:"100%",height:120,background:"#0d1117",border:"1px solid #21262d",borderRadius:10,padding:12,color:"#f1f5f9",fontSize:12,fontFamily:"monospace",resize:"vertical",boxSizing:"border-box",outline:"none",marginBottom:err?8:12}}/>
-            {err && <div style={{background:"#2d0a0a",border:"1px solid #7f1d1d",borderRadius:10,padding:"10px 12px",color:"#fca5a5",fontSize:12,marginBottom:12}}>⚠️ {err}</div>}
-            <div style={{display:"flex",gap:10}}>
-              <button onClick={onClose} style={{flex:1,background:"#161b22",color:"#f1f5f9",border:"none",borderRadius:10,padding:12,fontSize:14,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>Cancel</button>
-              <button onClick={doSaveCode} disabled={!code.trim()} style={{flex:2,background:code.trim()?"#60a5fa":"#1e293b",color:code.trim()?"#0f172a":"#475569",border:"none",borderRadius:10,padding:12,fontSize:14,fontWeight:700,cursor:code.trim()?"pointer":"not-allowed",fontFamily:"inherit"}}>🔗 Import from Code</button>
             </div>
           </>
         )}
@@ -1147,7 +1219,7 @@ function MoveToFolderModal({ folders, currentFolderId, onMove, onClose }) {
 }
 
 // ── Analytics Screen ──────────────────────────────────────────────────────────
-function AnalyticsScreen({ analytics, lib, rev, onRevisionSheet, onBack, onReset }) {
+function AnalyticsScreen({ analytics, lib, onBack, onReset }) {
   const [confirmReset, setConfirmReset] = useState(false);
   const sessions = analytics?.sessions || [];
   const totalAttempted = analytics?.totalAttempted || 0;
@@ -1255,14 +1327,6 @@ function AnalyticsScreen({ analytics, lib, rev, onRevisionSheet, onBack, onReset
                 ))}
               </div>
             )}
-            <button onClick={onRevisionSheet} style={{width:"100%",background:"linear-gradient(135deg,#1a0f2e,#2e1065)",border:"1px solid #7c3aed55",borderRadius:14,padding:"14px 16px",display:"flex",alignItems:"center",gap:12,cursor:"pointer",fontFamily:"inherit",marginBottom:12}}>
-              <div style={{fontSize:28}}>📋</div>
-              <div style={{textAlign:"left"}}>
-                <div style={{color:"#a78bfa",fontSize:13,fontWeight:700}}>AI Revision Sheet</div>
-                <div style={{color:"#64748b",fontSize:11,marginTop:2}}>Personalised plan based on your weak topics &amp; bookmarks</div>
-              </div>
-              <div style={{marginLeft:"auto",color:"#7c3aed",fontSize:18}}>›</div>
-            </button>
             <div style={card}>
               <div style={{color:"#94a3b8",fontSize:11,fontWeight:700,letterSpacing:1,marginBottom:12}}>LIFETIME STATS</div>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:12}}>
@@ -1391,81 +1455,6 @@ export default function App() {
   const [authError, setAuthError]     = useState("");
   const [syncStatus, setSyncStatus]   = useState("idle"); // idle | syncing | synced | error
   const [bootReady, setBootReady]     = useState(false);  // gate: show spinner ~2s on mount while auth resolves
-
-  // ── AI (Gemini) state ───────────────────────────────────────────────────────
-  // aiChat: { [questionId]: { explainLoading, explainText, explainError, chatOpen, msgs:[{role,text}], chatLoading, chatError, input } }
-  const [aiChat, setAiChat] = useState({});
-  const aiChatUpdate = (id, patch) => setAiChat(p => ({ ...p, [id]: { ...(p[id]||{}), ...patch } }));
-
-  const aiExplainFor = useCallback(async (q, qa) => {
-    const id = q.id;
-    aiChatUpdate(id, { explainLoading: true, explainError: null });
-    try {
-      const { explanation } = await askGemini("explain", {
-        question: q.q, options: q.options, correctIndex: q.answer,
-        selectedIndex: qa?.selected ?? null, existingExplanation: q.explanation, topic: q.topic,
-      });
-      aiChatUpdate(id, { explainLoading: false, explainText: explanation });
-    } catch (e) {
-      aiChatUpdate(id, { explainLoading: false, explainError: e.message });
-    }
-  }, []);
-
-  const aiDoubtSend = useCallback(async (q, msgText) => {
-    const id = q.id;
-    const prev = aiChat[id] || {};
-    const newMsgs = [...(prev.msgs||[]), { role:"user", text: msgText }];
-    aiChatUpdate(id, { msgs: newMsgs, chatLoading: true, chatError: null, input: "" });
-    try {
-      const { reply } = await askGemini("doubt", {
-        question: q.q, options: q.options, correctIndex: q.answer,
-        topic: q.topic, history: prev.msgs||[], userMessage: msgText,
-      });
-      aiChatUpdate(id, { msgs: [...newMsgs, { role:"ai", text: reply }], chatLoading: false });
-    } catch (e) {
-      aiChatUpdate(id, { chatLoading: false, chatError: e.message });
-    }
-  }, [aiChat]);
-
-  // ── Revision Sheet state ─────────────────────────────────────────────────────
-  const [revSheet, setRevSheet] = useState({ open:false, loading:false, text:"", error:"" });
-  const openRevSheet = useCallback(async (analyticsData, revData, libData) => {
-    setRevSheet({ open:true, loading:true, text:"", error:"" });
-    try {
-      const sessions = analyticsData?.sessions || [];
-      const totalCorrect = analyticsData?.totalCorrect || 0;
-      const totalWrong   = analyticsData?.totalWrong   || 0;
-      const overallAcc   = (totalCorrect+totalWrong)>0 ? Math.round(totalCorrect/(totalCorrect+totalWrong)*100) : 0;
-      const weakTopics   = getWeakTopics(sessions);
-
-      // Collect recently wrong question texts (last 20 sessions)
-      const recentSessions = sessions.slice(-20);
-      const wrongQIds = new Set();
-      recentSessions.forEach(s => { if(s.wrongIds) s.wrongIds.forEach(id => wrongQIds.add(id)); });
-      const allQs = Object.values(libData||{}).flatMap(set => set.questions||[]);
-      const recentWrongSamples = allQs.filter(q => wrongQIds.has(q.id)).slice(0,8).map(q=>q.q);
-
-      // Collect bookmarked question texts
-      const bookmarkedSamples = [];
-      Object.entries(revData||{}).forEach(([key, d]) => {
-        const set = (libData||{})[key];
-        if(!set) return;
-        (d.bookmarked||[]).forEach(id => {
-          const q = set.questions?.find(q=>q.id===id);
-          if(q) bookmarkedSamples.push(q.q);
-        });
-      });
-
-      const { sheet } = await askGemini("revision", {
-        weakTopics, overallAcc, totalSessions: sessions.length,
-        recentWrongSamples: recentWrongSamples.slice(0,8),
-        bookmarkedSamples: bookmarkedSamples.slice(0,8),
-      });
-      setRevSheet({ open:true, loading:false, text:sheet, error:"" });
-    } catch(e) {
-      setRevSheet({ open:true, loading:false, text:"", error: e.message });
-    }
-  }, []);
 
   // ── App state ───────────────────────────────────────────────────────────────
   const [appScreen, setAppScreen]     = useState("splash");
@@ -1605,6 +1594,13 @@ export default function App() {
   // Maps each in-app screen to the screen the back button should return to.
   // Screens not listed here (e.g. "library") are treated as the app root.
   const BACK_PARENT = { home: "library", analytics: "library", settings: "library", quiz: "library", result: "library", review: "result", folder: "library" };
+  // appScreen has its own, higher-level layer above the screen map: "about"
+  // (the Welcome/Guide page — reached both on first-run onboarding and by
+  // revisiting via the header "Back"/"Full Guide" buttons) previously had no
+  // parent mapping at all, so a back press there fell straight through to
+  // real browser history — closing the app, or unwinding all the way to the
+  // initial page load (appScreen's default state, "splash").
+  const APP_BACK_PARENT = { about: "app" };
 
   // Seed a base history entry on mount so the first back press is captured.
   useEffect(() => {
@@ -1618,18 +1614,26 @@ export default function App() {
   useEffect(() => {
     if (typeof window === "undefined") return;
     if (authMode === null || authMode === "auth") return;
-    const isRoot = !BACK_PARENT[screen];
+    const isRoot = appScreen !== "app" ? !APP_BACK_PARENT[appScreen] : !BACK_PARENT[screen];
     const hasBuffer = window.history.state && window.history.state.haqBuffer;
     if (!isRoot && !hasBuffer) {
       window.history.pushState({ haqBuffer: true }, "");
     }
-  }, [screen, authMode]);
+  }, [screen, appScreen, authMode]);
 
   // Intercept back navigation: move to the logical parent screen.
+  const appScreenRef = useRef(appScreen);
+  const screenRef = useRef(screen);
+  appScreenRef.current = appScreen;
+  screenRef.current = screen;
   useEffect(() => {
     if (typeof window === "undefined") return;
     const onPop = () => {
-      setScreen(prev => BACK_PARENT[prev] || prev);
+      if (appScreenRef.current !== "app") {
+        setAppScreen(prevApp => APP_BACK_PARENT[prevApp] || prevApp);
+      } else {
+        setScreen(prevScreen => BACK_PARENT[prevScreen] || prevScreen);
+      }
     };
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
@@ -2074,6 +2078,12 @@ export default function App() {
     return () => clearInterval(totalRef.current);
   }, [screen]);
 
+  // A question counts as "resolved" only once it has been actually answered
+  // (selected !== null). A skipped entry is deliberately left unresolved so
+  // it can be revisited in a later round, exam-style.
+  const isAnswered = qid => { const a=ans[qid]; return !!a && a.selected!==null; };
+  const findUnresolved = excludeId => qs.findIndex(qq => qq.id!==excludeId && !isAnswered(qq.id));
+
   const doSelect = idx => {
     if (revealed) return;
     clearInterval(timerRef.current);
@@ -2083,20 +2093,50 @@ export default function App() {
   const doSkip = () => {
     if (revealed) return;
     clearInterval(timerRef.current);
-    setAns(p=>({...p,[qs[cur].id]:{selected:null,correct:false,skipped:true}}));
-    setRevealed(true);
+    const id = qs[cur].id;
+    setAns(p=>({...p,[id]:{selected:null,correct:false,skipped:true}}));
+    // Skip just moves on — it never reveals the answer.
+    const n = cur+1;
+    if (n<qs.length) {
+      setCur(n);
+      setRevealed(isAnswered(qs[n]?.id));
+      if (!isAnswered(qs[n]?.id)) setTLeft(timerSec);
+    } else {
+      // Reached the end — loop back to the earliest unresolved question
+      // (skipped or untouched) so skipped questions can be attempted later.
+      const idx = findUnresolved(id);
+      if (idx!==-1) { setCur(idx); setRevealed(false); setTLeft(timerSec); }
+      else handleFinishClick();
+    }
   };
-  const doUndo = () => {
-    if (!revealed) return;
-    const qid = qs[cur]?.id;
-    setAns(p=>{ const n={...p}; delete n[qid]; return n; });
-    setAiChat(p=>{ const n={...p}; delete n[qid]; return n; }); // stale explanation was tied to the old selection
-    setRevealed(false);
-    setTLeft(timerOn?timerSec:0);
+  const goTo = idx => {
+    setCur(idx);
+    setRevealed(isAnswered(qs[idx]?.id));
+    if (!isAnswered(qs[idx]?.id)) setTLeft(timerSec);
+    setShowPal(false);
   };
-  const goTo = idx => { setCur(idx); setRevealed(!!ans[qs[idx]?.id]); if(!ans[qs[idx]?.id]) setTLeft(timerSec); setShowPal(false); };
-  const doNext = () => { const n=cur+1; if(n<qs.length){setCur(n);setRevealed(!!ans[qs[n]?.id]);if(!ans[qs[n]?.id])setTLeft(timerSec);}else finish(ans,bk); };
-  const doPrev = () => { const p=cur-1; if(p>=0){setCur(p);setRevealed(!!ans[qs[p]?.id]);if(!ans[qs[p]?.id])setTLeft(timerSec);} };
+  const doNext = () => {
+    const n=cur+1;
+    if(n<qs.length){
+      setCur(n);
+      setRevealed(isAnswered(qs[n]?.id));
+      if(!isAnswered(qs[n]?.id)) setTLeft(timerSec);
+    } else {
+      // Reached the end — if skipped/unanswered questions remain, go attempt
+      // them instead of forcing a finish. Explicit Submit still overrides.
+      const idx = findUnresolved(null);
+      if (idx!==-1) { setCur(idx); setRevealed(false); setTLeft(timerSec); }
+      else handleFinishClick();
+    }
+  };
+  const doPrev = () => {
+    const p=cur-1;
+    if(p>=0){
+      setCur(p);
+      setRevealed(isAnswered(qs[p]?.id));
+      if(!isAnswered(qs[p]?.id)) setTLeft(timerSec);
+    }
+  };
 
   const correct   = Object.values(ans).filter(a=>a.correct).length;
   const wrong     = Object.values(ans).filter(a=>!a.correct&&!a.skipped&&a.selected!==null).length;
@@ -2106,7 +2146,7 @@ export default function App() {
   const maxMarks  = qs.length*MARKS_CORRECT;
   const acc       = attempted>0?Math.round(correct/attempted*100):0;
   const qStat     = q => { if(bk[q.id]) return "bookmarked"; const a=ans[q.id]; if(!a) return "unattempted"; if(a.skipped) return "skipped"; return a.correct?"correct":"wrong"; };
-  const unattemptedCount = qs.length - Object.keys(ans).length;
+  const unattemptedCount = qs.filter(qq=>!isAnswered(qq.id)).length;
   const sets = Object.entries(lib||{});
   // A set only counts as "in a folder" if that folder still exists — guards against stale folderId data.
   const isInFolder = (set) => !!(set.folderId && (folders||{})[set.folderId]);
@@ -2129,8 +2169,7 @@ export default function App() {
               <div style={{minWidth:28,height:28,borderRadius:8,background:gradeInfo.bg,border:`1.5px solid ${gradeInfo.borderColor}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:900,color:gradeInfo.color,flexShrink:0,letterSpacing:"-0.5px"}}>
                 {gradeInfo.grade}
               </div>
-              <div style={{fontSize:15,fontWeight:700,color:"#f1f5f9",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",flex:1,minWidth:0}}>{set.title}</div>
-              <button onClick={()=>setRenameKey(key)} title="Rename" style={{background:"none",border:"none",color:"#64748b",fontSize:13,cursor:"pointer",padding:2,flexShrink:0,lineHeight:1}}>✏️</button>
+              <div style={{fontSize:15,fontWeight:700,color:"#f1f5f9",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{set.title}</div>
             </div>
             <div style={{color:"#64748b",fontSize:11,marginBottom:8,paddingLeft:36}}>
               {set.count} Qs · {new Date(set.savedAt).toLocaleDateString("en-IN",{day:"numeric",month:"short",year:"numeric"})}
@@ -2152,8 +2191,8 @@ export default function App() {
           </div>
           <div style={{display:"flex",flexDirection:"column",gap:5,flexShrink:0}}>
             <button onClick={()=>{setActiveSet(set);setActiveKey(key);setTopic("All Topics");setMode("full");setQCount("All");setScreen("home");}} style={{background:"linear-gradient(90deg,#0d9488,#2dd4bf)",color:"#0f172a",border:"none",borderRadius:8,padding:"8px 14px",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Practice →</button>
+            <button onClick={()=>setRenameKey(key)} style={{background:"#161b22",color:"#60a5fa",border:"none",borderRadius:8,padding:"5px 14px",fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>✏️ Rename</button>
             <button onClick={()=>setMoveSetKey(key)} style={{background:"#161b22",color:"#fbbf24",border:"none",borderRadius:8,padding:"5px 14px",fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>📁 Move</button>
-            <button onClick={()=>setShareSet(set)} style={{background:"#161b22",color:"#38bdf8",border:"none",borderRadius:8,padding:"5px 14px",fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>🔗 Share Link</button>
             <button onClick={()=>setExportSet(set)} style={{background:"#161b22",color:"#2dd4bf",border:"1px solid #2dd4bf30",borderRadius:8,padding:"5px 14px",fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>⬇ Export</button>
             <button onClick={()=>setDelKey(key)} style={{background:"#161b22",color:"#f87171",border:"none",borderRadius:8,padding:"5px 14px",fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>🗑️ Delete</button>
           </div>
@@ -2176,7 +2215,7 @@ export default function App() {
       <div style={{width:88,height:88,borderRadius:20,overflow:"hidden",boxShadow:"0 0 32px #2dd4bf40"}}>
         <img src="/icon-192.png" alt="HAQ PREP" width={88} height={88} style={{width:"100%",height:"100%",objectFit:"cover",display:"block"}}/>
       </div>
-      <div style={{color:"#f1f5f9",fontSize:16,fontWeight:700,letterSpacing:"0.3px"}}>HAQ PREP</div>
+      <div style={{fontFamily:"'Courier New',monospace",color:"#f1f5f9",fontSize:16,fontWeight:700,letterSpacing:"-0.3px"}}>haq<span style={{color:"#2dd4bf"}}>/</span>prep</div>
       <div style={{width:20,height:20,border:"2px solid #2dd4bf",borderTopColor:"transparent",borderRadius:"50%",animation:"spin 0.8s linear infinite"}}/>
       <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
     </div>
@@ -2199,27 +2238,8 @@ export default function App() {
 
   // ── Analytics ───────────────────────────────────────────────────────��────────
   if (screen === "analytics") return (
-    <>
-      {revSheet.open && (
-        <div style={{position:"fixed",inset:0,background:"#000000cc",zIndex:300,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
-          <div style={{background:"#161b22",borderRadius:16,padding:20,maxWidth:480,width:"100%",border:"1px solid #21262d",maxHeight:"85vh",display:"flex",flexDirection:"column"}}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
-              <div style={{color:"#a78bfa",fontSize:14,fontWeight:700}}>📋 Your Revision Sheet</div>
-              <button onClick={()=>setRevSheet(p=>({...p,open:false}))} style={{background:"none",border:"none",color:"#64748b",fontSize:18,cursor:"pointer",lineHeight:1}}>✕</button>
-            </div>
-            {revSheet.loading && <div style={{color:"#a78bfa",fontSize:13,textAlign:"center",padding:32}}>✨ Generating your personalised revision sheet…</div>}
-            {revSheet.error && <div style={{color:"#fca5a5",fontSize:12,background:"#2d0a0a",borderRadius:10,padding:12}}>{revSheet.error}</div>}
-            {revSheet.text && (
-              <div style={{overflowY:"auto",flex:1}}>
-                <pre style={{color:"#e2e8f0",fontSize:12,lineHeight:1.8,whiteSpace:"pre-wrap",fontFamily:"'Segoe UI',sans-serif",margin:0}}>{revSheet.text}</pre>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-      <AnalyticsScreen analytics={analytics||{}} lib={lib||{}} rev={rev||{}} onRevisionSheet={()=>openRevSheet(analytics,rev,lib)} onBack={()=>setScreen("library")}
-        onReset={()=>{ const empty={sessions:[],totalAttempted:0,totalCorrect:0,totalWrong:0,totalSkipped:0}; persistAnalytics(empty); showToast("🗑 Analytics reset"); setScreen("library"); }}/>
-    </>
+    <AnalyticsScreen analytics={analytics||{}} lib={lib||{}} onBack={()=>setScreen("library")}
+      onReset={()=>{ const empty={sessions:[],totalAttempted:0,totalCorrect:0,totalWrong:0,totalSkipped:0}; persistAnalytics(empty); showToast("🗑 Analytics reset"); setScreen("library"); }}/>
   );
 
   // ── Settings ───────────────────────────────────────────────────────────────
@@ -2308,33 +2328,33 @@ export default function App() {
           {authMode==="guest" && <GuestBanner setCount={sets.length} onBackup={()=>setShowBackup(true)} onSignIn={handleSwitchToCloud}/>}
 
           {/* Header */}
-          <div style={{background:"#161b22",borderRadius:16,padding:"18px 20px",marginBottom:12,border:"1px solid #21262d",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+          <div style={{background:"#161b22",borderRadius:16,padding:"18px 20px",marginBottom:12,border:"1px solid #21262d"}}>
             <div
               onClick={()=>setAuthMode("auth")}
               role="button"
               tabIndex={0}
               aria-label="Go to home page"
               onKeyDown={(e)=>{ if(e.key==="Enter"||e.key===" "){ e.preventDefault(); setAuthMode("auth"); } }}
-              style={{display:"flex",alignItems:"center",gap:12,cursor:"pointer"}}
+              style={{display:"flex",alignItems:"center",gap:12,cursor:"pointer",marginBottom:14}}
             >
               <div style={{width:46,height:46,borderRadius:12,overflow:"hidden",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
                 <img src="/icon-192.png" alt="HAQ PREP logo" width={46} height={46} style={{width:"100%",height:"100%",objectFit:"cover"}}/>
               </div>
-              <div>
-                <div style={{fontSize:18,fontWeight:800,color:"#f1f5f9",letterSpacing:"-0.3px"}}>HAQ PREP</div>
+              <div style={{minWidth:0}}>
+                <div style={{fontFamily:"'Courier New',monospace",fontSize:18,fontWeight:800,color:"#f1f5f9",letterSpacing:"-0.3px",whiteSpace:"nowrap"}}>haq<span style={{color:"#2dd4bf"}}>/</span>prep</div>
                 <div style={{color:"#64748b",fontSize:11,marginTop:1}}>{sets.length} set{sets.length!==1?"s":""} in library</div>
               </div>
             </div>
-            <div style={{display:"flex",gap:8,alignItems:"center"}}>
-              <button onClick={()=>setAppScreen("about")} style={{display:"inline-flex",alignItems:"center",gap:7,background:"#161b22",border:"1px solid #21262d",borderRadius:10,padding:"8px 14px 8px 10px",cursor:"pointer",fontFamily:"inherit"}}>
-                <div style={{width:20,height:20,borderRadius:6,background:"#0d1117",display:"flex",alignItems:"center",justifyContent:"center",color:"#64748b",fontSize:14,lineHeight:1}}>‹</div>
+            <div style={{display:"flex",gap:8}}>
+              <button onClick={()=>setAppScreen("about")} style={{flex:1,display:"inline-flex",alignItems:"center",justifyContent:"center",gap:7,background:"#0d1117",border:"1px solid #21262d",borderRadius:10,padding:"9px 10px",cursor:"pointer",fontFamily:"inherit"}}>
+                <div style={{width:18,height:18,borderRadius:5,display:"flex",alignItems:"center",justifyContent:"center",color:"#64748b",fontSize:13,lineHeight:1}}>‹</div>
                 <span style={{color:"#64748b",fontSize:12,fontWeight:600}}>Back</span>
               </button>
-              <button onClick={()=>setScreen("analytics")} style={{background:"#161b22",border:"1px solid #21262d",borderRadius:12,padding:"10px 14px",color:"#a78bfa",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit",display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
-                <span style={{fontSize:18}}>📊</span><span style={{fontSize:10}}>Analytics</span>
+              <button onClick={()=>setScreen("analytics")} style={{flex:1,background:"#0d1117",border:"1px solid #21262d",borderRadius:10,padding:"9px 10px",color:"#a78bfa",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>
+                <span style={{fontSize:15}}>📊</span><span>Analytics</span>
               </button>
-              <button onClick={()=>setScreen("settings")} style={{background:"#161b22",border:"1px solid #21262d",borderRadius:12,padding:"10px 14px",color:"#94a3b8",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit",display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
-                <span style={{fontSize:18}}>⚙️</span><span style={{fontSize:10}}>Settings</span>
+              <button onClick={()=>setScreen("settings")} style={{flex:1,background:"#0d1117",border:"1px solid #21262d",borderRadius:10,padding:"9px 10px",color:"#94a3b8",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>
+                <span style={{fontSize:15}}>⚙️</span><span>Settings</span>
               </button>
             </div>
           </div>
@@ -2501,6 +2521,18 @@ export default function App() {
                 </div>
               </div>
               <div style={{display:"flex",gap:6,flexShrink:0}}>
+                <button onClick={()=>{
+                  const folderKeys = folderSetEntries.map(([key])=>key);
+                  const filteredLib = Object.fromEntries(folderKeys.map(k=>[k,(lib||{})[k]]));
+                  const filteredRev = Object.fromEntries(folderKeys.filter(k=>(rev||{})[k]).map(k=>[k,(rev||{})[k]]));
+                  const filteredSrs = Object.fromEntries(folderKeys.filter(k=>(srs||{})[k]).map(k=>[k,(srs||{})[k]]));
+                  const backup = { backup_version:2, app:"HAQ PREP", exported_at:new Date().toISOString().slice(0,10), sets_count:folderKeys.length, library:filteredLib, revision:filteredRev, analytics:{}, srs:filteredSrs, folders:{ [activeFolderKey]: folder } };
+                  const blob = new Blob([JSON.stringify(backup,null,2)],{type:"application/json"});
+                  const url = URL.createObjectURL(blob);
+                  const safeName = (folder.name||"folder").replace(/[^a-z0-9]+/gi,"-").toLowerCase();
+                  const a = document.createElement("a"); a.href=url; a.download=`haqprep-${safeName}-${new Date().toISOString().slice(0,10)}.json`;
+                  document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+                }} style={{background:"#0d1117",color:"#2dd4bf",border:"1px solid #2dd4bf30",borderRadius:8,padding:"7px 10px",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>⬇ Export</button>
                 <button onClick={()=>setRenameFolderKey(activeFolderKey)} style={{background:"#0d1117",color:"#60a5fa",border:"1px solid #21262d",borderRadius:8,padding:"7px 10px",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>✏️ Rename</button>
                 <button onClick={()=>setDelFolderKey(activeFolderKey)} style={{background:"#0d1117",color:"#f87171",border:"1px solid #21262d",borderRadius:8,padding:"7px 10px",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>🗑️ Delete</button>
               </div>
@@ -2763,7 +2795,7 @@ export default function App() {
   const tPct = timerOn?(tLeft/timerSec)*100:100;
   const tClr = tLeft>timerSec*0.33?"#4ade80":tLeft>timerSec*0.11?"#fbbf24":"#f87171";
   const isLast = cur===qs.length-1;
-  const handleFinishClick = () => { const unatt=qs.filter(qq=>!ans[qq.id]).length; if(unatt>0) setShowFinish(true); else finish(ans,bk); };
+  const handleFinishClick = () => { const unatt=qs.filter(qq=>!isAnswered(qq.id)).length; if(unatt>0) setShowFinish(true); else finish(ans,bk); };
 
   return (
     <div style={bg}>
@@ -2784,7 +2816,7 @@ export default function App() {
           <div style={{background:"#161b22",borderRadius:16,padding:24,maxWidth:300,width:"90%",border:"1px solid #fbbf2466",textAlign:"center"}}>
             <div style={{fontSize:32,marginBottom:8}}>⚠️</div>
             <div style={{color:"#f1f5f9",fontSize:15,fontWeight:700,marginBottom:8}}>Submit Quiz?</div>
-            <p style={{color:"#fbbf24",fontSize:13,marginBottom:18}}>{unattemptedCount} question{unattemptedCount!==1?"s":""} unattempted. Submit anyway?</p>
+            <p style={{color:"#fbbf24",fontSize:13,marginBottom:18}}>{unattemptedCount} question{unattemptedCount!==1?"s":""} still skipped/unattempted. Submit anyway?</p>
             <div style={{display:"flex",gap:10}}>
               <button onClick={()=>setShowFinish(false)} style={{flex:1,background:"#161b22",color:"#f1f5f9",border:"none",borderRadius:10,padding:11,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>Go Back</button>
               <button onClick={()=>{setShowFinish(false);finish(ans,bk);}} style={{flex:1,background:"#fbbf24",color:"#0f172a",border:"none",borderRadius:10,padding:11,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Submit</button>
@@ -2818,7 +2850,7 @@ export default function App() {
           <div style={{display:"flex",gap:5}}>
             <button onClick={()=>setShowPal(true)} style={{background:"#161b22",color:"#94a3b8",border:"1px solid #21262d",borderRadius:8,padding:"5px 9px",fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>⊞ {cur+1}/{qs.length}</button>
             <button onClick={()=>setShowRst(true)} style={{background:"#161b22",color:"#f87171",border:"1px solid #21262d",borderRadius:8,padding:"5px 9px",fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>↺</button>
-            <button onClick={handleFinishClick} style={{background:"#161b22",color:"#fbbf24",border:"1px solid #21262d",borderRadius:8,padding:"5px 9px",fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>🏁</button>
+            <button onClick={handleFinishClick} style={{background:"#161b22",color:"#fbbf24",border:"1px solid #fbbf2466",borderRadius:8,padding:"5px 10px",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",gap:4}}>🏁 Submit</button>
           </div>
           <div style={{textAlign:"center"}}>
             <div style={{color:"#64748b",fontSize:9,letterSpacing:1}}>ELAPSED</div>
@@ -2877,58 +2909,7 @@ export default function App() {
             <div style={{color:qa?.correct?"#4ade80":"#fca5a5",fontSize:10,fontWeight:700,marginBottom:5}}>
               {qa?.skipped?"⏭ SKIPPED — ":qa?.correct?"✓ CORRECT — ":"✗ INCORRECT — "}💡 EXPLANATION
             </div>
-            <p style={{color:qa?.correct?"#86efac":"#fca5a5",fontSize:12,lineHeight:1.6,margin:"0 0 10px"}}>{q.explanation||"No explanation provided."}</p>
-            <button onClick={doUndo} style={{background:"none",border:"1px solid #64748b55",color:"#94a3b8",borderRadius:8,padding:"6px 12px",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit",marginBottom:8}}>
-              ↺ Change answer
-            </button>
-            {/* ── AI Doubt Chat ─────────────────────────────────────────── */}
-            {(() => {
-              const c = aiChat[q.id] || {};
-              return (
-                <>
-                  {c.explainText && (
-                    <div style={{background:"#0d1a2e",borderRadius:8,padding:10,marginBottom:8,border:"1px solid #1e3a5f"}}>
-                      <div style={{color:"#60a5fa",fontSize:10,fontWeight:700,marginBottom:4}}>🤖 AI DEEPER EXPLANATION</div>
-                      <p style={{color:"#93c5fd",fontSize:12,lineHeight:1.6,margin:0}}>{c.explainText}</p>
-                    </div>
-                  )}
-                  {(!c.explainText || !c.chatOpen) && (
-                    <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-                      {!c.explainText && (
-                        <button onClick={()=>aiExplainFor(q,qa)} disabled={c.explainLoading} style={{background:"none",border:"1px solid #60a5fa55",color:"#60a5fa",borderRadius:8,padding:"6px 12px",fontSize:11,fontWeight:700,cursor:c.explainLoading?"wait":"pointer",fontFamily:"inherit"}}>
-                          {c.explainLoading?"🤖 Thinking…":"🤖 Explain more"}
-                        </button>
-                      )}
-                      {!c.chatOpen && (
-                        <button onClick={()=>aiChatUpdate(q.id,{chatOpen:true})} style={{background:"none",border:"1px solid #a78bfa55",color:"#a78bfa",borderRadius:8,padding:"6px 12px",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
-                          {c.explainText ? "💬 Ask a follow-up doubt" : "💬 Ask a doubt"}
-                        </button>
-                      )}
-                    </div>
-                  )}
-                  {c.explainError && <div style={{color:"#fca5a5",fontSize:11,marginTop:4}}>⚠️ {c.explainError}</div>}
-                  {c.chatOpen && (
-                    <div style={{marginTop:8,background:"#0d1117",borderRadius:10,padding:10,border:"1px solid #1e293b"}}>
-                      <div style={{color:"#a78bfa",fontSize:10,fontWeight:700,marginBottom:8}}>💬 DOUBT CHAT</div>
-                      {(c.msgs||[]).map((m,i)=>(
-                        <div key={i} style={{marginBottom:8,display:"flex",flexDirection:"column",alignItems:m.role==="user"?"flex-end":"flex-start"}}>
-                          <div style={{maxWidth:"88%",background:m.role==="user"?"#1e3a5f":"#1a0f2e",color:m.role==="user"?"#93c5fd":"#c4b5fd",borderRadius:8,padding:"7px 10px",fontSize:12,lineHeight:1.5}}>
-                            {m.role==="ai" && <span style={{fontSize:10,fontWeight:700,display:"block",marginBottom:3,color:"#a78bfa"}}>🤖 AI</span>}
-                            {m.text}
-                          </div>
-                        </div>
-                      ))}
-                      {c.chatLoading && <div style={{color:"#a78bfa",fontSize:11,marginBottom:6}}>🤖 Thinking…</div>}
-                      {c.chatError && <div style={{color:"#fca5a5",fontSize:11,marginBottom:6}}>⚠️ {c.chatError}</div>}
-                      <div style={{display:"flex",gap:6,marginTop:4}}>
-                        <input value={c.input||""} onChange={e=>aiChatUpdate(q.id,{input:e.target.value})} onKeyDown={e=>{if(e.key==="Enter"&&(c.input||"").trim()&&!c.chatLoading)aiDoubtSend(q,(c.input||"").trim());}} placeholder="Type your doubt… (Enter to send)" style={{flex:1,background:"#161b22",border:"1px solid #21262d",borderRadius:8,padding:"7px 10px",color:"#f1f5f9",fontSize:12,fontFamily:"inherit",outline:"none"}}/>
-                        <button onClick={()=>{if((c.input||"").trim()&&!c.chatLoading)aiDoubtSend(q,(c.input||"").trim());}} disabled={!(c.input||"").trim()||c.chatLoading} style={{background:"#7c3aed",color:"#fff",border:"none",borderRadius:8,padding:"7px 12px",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Send</button>
-                      </div>
-                    </div>
-                  )}
-                </>
-              );
-            })()}
+            <p style={{color:qa?.correct?"#86efac":"#fca5a5",fontSize:12,lineHeight:1.6,margin:0}}>{q.explanation||"No explanation provided."}</p>
           </div>
         )}
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:7,marginBottom:12}}>
