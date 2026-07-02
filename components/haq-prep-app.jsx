@@ -1566,6 +1566,13 @@ export default function App() {
   // Maps each in-app screen to the screen the back button should return to.
   // Screens not listed here (e.g. "library") are treated as the app root.
   const BACK_PARENT = { home: "library", analytics: "library", settings: "library", quiz: "library", result: "library", review: "result", folder: "library" };
+  // appScreen has its own, higher-level layer above the screen map: "about"
+  // (the Welcome/Guide page — reached both on first-run onboarding and by
+  // revisiting via the header "Back"/"Full Guide" buttons) previously had no
+  // parent mapping at all, so a back press there fell straight through to
+  // real browser history — closing the app, or unwinding all the way to the
+  // initial page load (appScreen's default state, "splash").
+  const APP_BACK_PARENT = { about: "app" };
 
   // Seed a base history entry on mount so the first back press is captured.
   useEffect(() => {
@@ -1579,18 +1586,26 @@ export default function App() {
   useEffect(() => {
     if (typeof window === "undefined") return;
     if (authMode === null || authMode === "auth") return;
-    const isRoot = !BACK_PARENT[screen];
+    const isRoot = appScreen !== "app" ? !APP_BACK_PARENT[appScreen] : !BACK_PARENT[screen];
     const hasBuffer = window.history.state && window.history.state.haqBuffer;
     if (!isRoot && !hasBuffer) {
       window.history.pushState({ haqBuffer: true }, "");
     }
-  }, [screen, authMode]);
+  }, [screen, appScreen, authMode]);
 
   // Intercept back navigation: move to the logical parent screen.
+  const appScreenRef = useRef(appScreen);
+  const screenRef = useRef(screen);
+  appScreenRef.current = appScreen;
+  screenRef.current = screen;
   useEffect(() => {
     if (typeof window === "undefined") return;
     const onPop = () => {
-      setScreen(prev => BACK_PARENT[prev] || prev);
+      if (appScreenRef.current !== "app") {
+        setAppScreen(prevApp => APP_BACK_PARENT[prevApp] || prevApp);
+      } else {
+        setScreen(prevScreen => BACK_PARENT[prevScreen] || prevScreen);
+      }
     };
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
