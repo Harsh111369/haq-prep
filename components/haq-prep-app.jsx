@@ -1031,7 +1031,6 @@ function ImportLinkModal({ data, onImport, onCancel }) {
 function JsonModal({ onSave, onClose, folders, defaultFolderId }) {
   const [tab, setTab] = useState("json");
   const [json, setJson] = useState("");
-  const [code, setCode] = useState("");
   const [err, setErr] = useState("");
   const [folderId, setFolderId] = useState(defaultFolderId || "");
   const nameRef = useRef();
@@ -1071,14 +1070,6 @@ function JsonModal({ onSave, onClose, folders, defaultFolderId }) {
     } catch(e) { setErr(e.message); }
   };
 
-  const doSaveCode = () => {
-    setErr("");
-    const decoded = decodeSet(code);
-    if (!decoded) { setErr("Invalid share code."); return; }
-    if (!decoded.questions?.length) { setErr("No questions found in this code."); return; }
-    onSave({ title: decoded.title||"Imported Set", questions: decoded.questions, savedAt: Date.now(), count: decoded.questions.length, folderId: folderId||null });
-  };
-
   const folderPicker = (
     <div style={{marginBottom:12}}>
       <label style={{display:"block",color:"#64748b",fontSize:11,fontWeight:600,marginBottom:6}}>Save to folder</label>
@@ -1101,7 +1092,7 @@ function JsonModal({ onSave, onClose, folders, defaultFolderId }) {
           <button onClick={onClose} style={{background:"#161b22",color:"#94a3b8",border:"none",borderRadius:8,padding:"6px 12px",fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>✕</button>
         </div>
         <div style={{display:"flex",gap:6,marginBottom:16,background:"#0d1117",borderRadius:10,padding:4}}>
-          {tabBtn("json","📋 Paste JSON")} {tabBtn("code","🔗 Share Code")}
+          {tabBtn("json","📋 Paste JSON")}
         </div>
         {tab === "json" && (
           <>
@@ -1116,18 +1107,6 @@ function JsonModal({ onSave, onClose, folders, defaultFolderId }) {
             <div style={{display:"flex",gap:10}}>
               <button onClick={onClose} style={{flex:1,background:"#161b22",color:"#f1f5f9",border:"none",borderRadius:10,padding:12,fontSize:14,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>Cancel</button>
               <button onClick={doSaveJson} disabled={!json.trim()} style={{flex:2,background:json.trim()?"#4ade80":"#1e293b",color:json.trim()?"#0f172a":"#475569",border:"none",borderRadius:10,padding:12,fontSize:14,fontWeight:700,cursor:json.trim()?"pointer":"not-allowed",fontFamily:"inherit"}}>💾 Save Set</button>
-            </div>
-          </>
-        )}
-        {tab === "code" && (
-          <>
-            <div style={{background:"#0f1e3a",border:"1px solid #1e3a6e",borderRadius:10,padding:"10px 12px",color:"#93c5fd",fontSize:11,marginBottom:14,lineHeight:1.7}}>🔗 Paste the share code your classmate sent you.</div>
-            {folderPicker}
-            <textarea value={code} onChange={e=>setCode(e.target.value)} placeholder="Paste share code here…" style={{width:"100%",height:120,background:"#0d1117",border:"1px solid #21262d",borderRadius:10,padding:12,color:"#f1f5f9",fontSize:12,fontFamily:"monospace",resize:"vertical",boxSizing:"border-box",outline:"none",marginBottom:err?8:12}}/>
-            {err && <div style={{background:"#2d0a0a",border:"1px solid #7f1d1d",borderRadius:10,padding:"10px 12px",color:"#fca5a5",fontSize:12,marginBottom:12}}>⚠️ {err}</div>}
-            <div style={{display:"flex",gap:10}}>
-              <button onClick={onClose} style={{flex:1,background:"#161b22",color:"#f1f5f9",border:"none",borderRadius:10,padding:12,fontSize:14,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>Cancel</button>
-              <button onClick={doSaveCode} disabled={!code.trim()} style={{flex:2,background:code.trim()?"#60a5fa":"#1e293b",color:code.trim()?"#0f172a":"#475569",border:"none",borderRadius:10,padding:12,fontSize:14,fontWeight:700,cursor:code.trim()?"pointer":"not-allowed",fontFamily:"inherit"}}>🔗 Import from Code</button>
             </div>
           </>
         )}
