@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useId } from "react";
 
 // Firebase — proper npm package imports (replaces the previous gstatic.com CDN imports)
 import { initializeApp, getApps } from "firebase/app";
@@ -781,6 +781,21 @@ function AboutScreen({ onStart, onHome }) {
 
 // ── Review Card ───────────────────────────────────────────────────────────────
 // ── Gemini AI helper ─────────────────────────────────────────────────────────
+function SparkIcon({ size = 14 }) {
+  const gradId = "sparkGrad-" + useId();
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" style={{flexShrink:0}}>
+      <defs>
+        <linearGradient id={gradId} x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stopColor="#60a5fa"/>
+          <stop offset="100%" stopColor="#a78bfa"/>
+        </linearGradient>
+      </defs>
+      <path d="M12 2 L14.2 9.8 L22 12 L14.2 14.2 L12 22 L9.8 14.2 L2 12 L9.8 9.8 Z" fill={`url(#${gradId})`}/>
+    </svg>
+  );
+}
+
 async function askGemini(action, payload) {
   const res = await fetch("/api/gemini", {
     method: "POST",
@@ -3000,13 +3015,13 @@ export default function App() {
                   {(!c.explainText || !c.chatOpen) && (
                     <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
                       {!c.explainText && (
-                        <button onClick={()=>aiExplainFor(q,qa)} disabled={c.explainLoading} style={{background:"none",border:"1px solid #60a5fa55",color:"#60a5fa",borderRadius:8,padding:"6px 12px",fontSize:11,fontWeight:700,cursor:c.explainLoading?"wait":"pointer",fontFamily:"inherit"}}>
-                          {c.explainLoading?"🤖 Thinking…":"🤖 Explain more"}
+                        <button onClick={()=>aiExplainFor(q,qa)} disabled={c.explainLoading} style={{background:"linear-gradient(135deg,#1e3a5f22,#1a0f2e22)",border:"1px solid #3b82f655",borderRadius:99,padding:"7px 14px 7px 10px",fontSize:11,fontWeight:700,color:"#93c5fd",display:"flex",alignItems:"center",gap:6,cursor:c.explainLoading?"wait":"pointer",fontFamily:"inherit"}}>
+                          <SparkIcon size={13}/> {c.explainLoading?"Thinking…":"Explain with AI"}
                         </button>
                       )}
                       {!c.chatOpen && (
-                        <button onClick={()=>aiChatUpdate(q.id,{chatOpen:true})} style={{background:"none",border:"1px solid #a78bfa55",color:"#a78bfa",borderRadius:8,padding:"6px 12px",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
-                          {c.explainText ? "💬 Ask a follow-up doubt" : "💬 Ask a doubt"}
+                        <button onClick={()=>aiChatUpdate(q.id,{chatOpen:true})} style={{background:"linear-gradient(135deg,#2e106522,#1a0f2e22)",border:"1px solid #a78bfa55",borderRadius:99,padding:"7px 14px 7px 10px",fontSize:11,fontWeight:700,color:"#c4b5fd",display:"flex",alignItems:"center",gap:6,cursor:"pointer",fontFamily:"inherit"}}>
+                          <SparkIcon size={13}/> {c.explainText ? "Ask AI a follow-up" : "Ask AI a doubt"}
                         </button>
                       )}
                     </div>
