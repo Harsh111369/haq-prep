@@ -1035,7 +1035,26 @@ function JsonModal({ onSave, onClose, folders, defaultFolderId }) {
   const [err, setErr] = useState("");
   const [folderId, setFolderId] = useState(defaultFolderId || "");
   const nameRef = useRef();
+  const fileRef = useRef();
   const folderList = Object.entries(folders||{});
+
+  const handleFileUpload = (e) => {
+    const file = e.target.files?.[0]; if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const text = String(ev.target.result||"");
+      setJson(text); setErr("");
+      // Auto-fill the name field from the file's own title, if the field is still empty.
+      try {
+        const parsed = JSON.parse(text.trim().replace(/```json|```/g,"").trim());
+        if (!Array.isArray(parsed) && parsed?.title && nameRef.current && !nameRef.current.value.trim()) {
+          nameRef.current.value = parsed.title;
+        }
+      } catch { /* leave name field as-is; doSaveJson will surface any real parse error */ }
+    };
+    reader.readAsText(file);
+    e.target.value = ""; // allow re-selecting the same file again later
+  };
 
   const doSaveJson = () => {
     setErr("");
@@ -1088,6 +1107,10 @@ function JsonModal({ onSave, onClose, folders, defaultFolderId }) {
           <>
             <input ref={nameRef} placeholder="Set name (e.g. Plant Pathology Part-10)" style={{width:"100%",background:"#0d1117",border:"1px solid #21262d",borderRadius:10,padding:"10px 12px",color:"#f1f5f9",fontSize:13,fontFamily:"inherit",boxSizing:"border-box",outline:"none",marginBottom:12}}/>
             {folderPicker}
+            <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}>
+              <input ref={fileRef} type="file" accept=".json" onChange={handleFileUpload} style={{flex:1,background:"#0d1117",border:"1px solid #21262d",borderRadius:10,padding:"10px 12px",color:"#94a3b8",fontSize:12,fontFamily:"inherit",boxSizing:"border-box",cursor:"pointer"}}/>
+              <span style={{color:"#475569",fontSize:11,flexShrink:0}}>or paste below</span>
+            </div>
             <textarea value={json} onChange={e=>setJson(e.target.value)} placeholder="Paste your MCQ JSON here…" style={{width:"100%",height:200,background:"#0d1117",border:"1px solid #21262d",borderRadius:10,padding:12,color:"#f1f5f9",fontSize:12,fontFamily:"monospace",resize:"vertical",boxSizing:"border-box",outline:"none",marginBottom:err?8:12}}/>
             {err && <div style={{background:"#2d0a0a",border:"1px solid #7f1d1d",borderRadius:10,padding:"10px 12px",color:"#fca5a5",fontSize:12,marginBottom:12}}>⚠️ {err}</div>}
             <div style={{display:"flex",gap:10}}>
