@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useId } from "react";
 
 // Firebase — proper npm package imports (replaces the previous gstatic.com CDN imports)
 import { initializeApp, getApps } from "firebase/app";
@@ -829,6 +829,33 @@ function AboutScreen({ onStart, onHome }) {
 }
 
 // ── Review Card ───────────────────────────────────────────────────────────────
+// ── Gemini AI helper ─────────────────────────────────────────────────────────
+function SparkIcon({ size = 14 }) {
+  const gradId = "sparkGrad-" + useId();
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" style={{flexShrink:0}}>
+      <defs>
+        <linearGradient id={gradId} x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stopColor="#60a5fa"/>
+          <stop offset="100%" stopColor="#a78bfa"/>
+        </linearGradient>
+      </defs>
+      <path d="M12 2 L14.2 9.8 L22 12 L14.2 14.2 L12 22 L9.8 14.2 L2 12 L9.8 9.8 Z" fill={`url(#${gradId})`}/>
+    </svg>
+  );
+}
+
+async function askGemini(action, payload) {
+  const res = await fetch("/api/gemini", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action, payload }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || "AI request failed.");
+  return data;
+}
+
 function ReviewCard({ q, a }) {
   const [open, setOpen] = useState(false);
   const col = a?.correct ? "#4ade80" : a?.skipped ? "#fbbf24" : "#f87171";
@@ -1219,7 +1246,7 @@ function MoveToFolderModal({ folders, currentFolderId, onMove, onClose }) {
 }
 
 // ── Analytics Screen ──────────────────────────────────────────────────────────
-function AnalyticsScreen({ analytics, lib, onBack, onReset }) {
+function AnalyticsScreen({ analytics, lib, rev, onRevisionSheet, onBack, onReset }) {
   const [confirmReset, setConfirmReset] = useState(false);
   const sessions = analytics?.sessions || [];
   const totalAttempted = analytics?.totalAttempted || 0;
@@ -1327,6 +1354,14 @@ function AnalyticsScreen({ analytics, lib, onBack, onReset }) {
                 ))}
               </div>
             )}
+            <button onClick={onRevisionSheet} style={{width:"100%",background:"linear-gradient(135deg,#1a0f2e,#2e1065)",border:"1px solid #7c3aed55",borderRadius:14,padding:"14px 16px",display:"flex",alignItems:"center",gap:12,cursor:"pointer",fontFamily:"inherit",marginBottom:12}}>
+              <div style={{fontSize:28}}>📋</div>
+              <div style={{textAlign:"left"}}>
+                <div style={{color:"#a78bfa",fontSize:13,fontWeight:700}}>AI Revision Sheet</div>
+                <div style={{color:"#64748b",fontSize:11,marginTop:2}}>Personalised plan based on your weak topics &amp; bookmarks</div>
+              </div>
+              <div style={{marginLeft:"auto",color:"#7c3aed",fontSize:18}}>›</div>
+            </button>
             <div style={card}>
               <div style={{color:"#94a3b8",fontSize:11,fontWeight:700,letterSpacing:1,marginBottom:12}}>LIFETIME STATS</div>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:12}}>
@@ -1455,6 +1490,81 @@ export default function App() {
   const [authError, setAuthError]     = useState("");
   const [syncStatus, setSyncStatus]   = useState("idle"); // idle | syncing | synced | error
   const [bootReady, setBootReady]     = useState(false);  // gate: show spinner ~2s on mount while auth resolves
+
+  // ── AI (Gemini) state ───────────────────────────────────────────────────────
+  // aiChat: { [questionId]: { explainLoading, explainText, explainError, chatOpen, msgs:[{role,text}], chatLoading, chatError, input } }
+  const [aiChat, setAiChat] = useState({});
+  const aiChatUpdate = (id, patch) => setAiChat(p => ({ ...p, [id]: { ...(p[id]||{}), ...patch } }));
+
+  const aiExplainFor = useCallback(async (q, qa) => {
+    const id = q.id;
+    aiChatUpdate(id, { explainLoading: true, explainError: null });
+    try {
+      const { explanation } = await askGemini("explain", {
+        question: q.q, options: q.options, correctIndex: q.answer,
+        selectedIndex: qa?.selected ?? null, existingExplanation: q.explanation, topic: q.topic,
+      });
+      aiChatUpdate(id, { explainLoading: false, explainText: explanation });
+    } catch (e) {
+      aiChatUpdate(id, { explainLoading: false, explainError: e.message });
+    }
+  }, []);
+
+  const aiDoubtSend = useCallback(async (q, msgText) => {
+    const id = q.id;
+    const prev = aiChat[id] || {};
+    const newMsgs = [...(prev.msgs||[]), { role:"user", text: msgText }];
+    aiChatUpdate(id, { msgs: newMsgs, chatLoading: true, chatError: null, input: "" });
+    try {
+      const { reply } = await askGemini("doubt", {
+        question: q.q, options: q.options, correctIndex: q.answer,
+        topic: q.topic, history: prev.msgs||[], userMessage: msgText,
+      });
+      aiChatUpdate(id, { msgs: [...newMsgs, { role:"ai", text: reply }], chatLoading: false });
+    } catch (e) {
+      aiChatUpdate(id, { chatLoading: false, chatError: e.message });
+    }
+  }, [aiChat]);
+
+  // ── Revision Sheet state ─────────────────────────────────────────────────────
+  const [revSheet, setRevSheet] = useState({ open:false, loading:false, text:"", error:"" });
+  const openRevSheet = useCallback(async (analyticsData, revData, libData) => {
+    setRevSheet({ open:true, loading:true, text:"", error:"" });
+    try {
+      const sessions = analyticsData?.sessions || [];
+      const totalCorrect = analyticsData?.totalCorrect || 0;
+      const totalWrong   = analyticsData?.totalWrong   || 0;
+      const overallAcc   = (totalCorrect+totalWrong)>0 ? Math.round(totalCorrect/(totalCorrect+totalWrong)*100) : 0;
+      const weakTopics   = getWeakTopics(sessions);
+
+      // Collect recently wrong question texts (last 20 sessions)
+      const recentSessions = sessions.slice(-20);
+      const wrongQIds = new Set();
+      recentSessions.forEach(s => { if(s.wrongIds) s.wrongIds.forEach(id => wrongQIds.add(id)); });
+      const allQs = Object.values(libData||{}).flatMap(set => set.questions||[]);
+      const recentWrongSamples = allQs.filter(q => wrongQIds.has(q.id)).slice(0,8).map(q=>q.q);
+
+      // Collect bookmarked question texts
+      const bookmarkedSamples = [];
+      Object.entries(revData||{}).forEach(([key, d]) => {
+        const set = (libData||{})[key];
+        if(!set) return;
+        (d.bookmarked||[]).forEach(id => {
+          const q = set.questions?.find(q=>q.id===id);
+          if(q) bookmarkedSamples.push(q.q);
+        });
+      });
+
+      const { sheet } = await askGemini("revision", {
+        weakTopics, overallAcc, totalSessions: sessions.length,
+        recentWrongSamples: recentWrongSamples.slice(0,8),
+        bookmarkedSamples: bookmarkedSamples.slice(0,8),
+      });
+      setRevSheet({ open:true, loading:false, text:sheet, error:"" });
+    } catch(e) {
+      setRevSheet({ open:true, loading:false, text:"", error: e.message });
+    }
+  }, []);
 
   // ── App state ───────────────────────────────────────────────────────────────
   const [appScreen, setAppScreen]     = useState("splash");
@@ -2137,6 +2247,14 @@ export default function App() {
       if(!isAnswered(qs[p]?.id)) setTLeft(timerSec);
     }
   };
+  const doUndo = () => {
+    if (!revealed) return;
+    const qid = qs[cur]?.id;
+    setAns(p=>{ const n={...p}; delete n[qid]; return n; });
+    setAiChat(p=>{ const n={...p}; delete n[qid]; return n; }); // stale explanation was tied to the old selection
+    setRevealed(false);
+    setTLeft(timerOn?timerSec:0);
+  };
 
   const correct   = Object.values(ans).filter(a=>a.correct).length;
   const wrong     = Object.values(ans).filter(a=>!a.correct&&!a.skipped&&a.selected!==null).length;
@@ -2169,7 +2287,8 @@ export default function App() {
               <div style={{minWidth:28,height:28,borderRadius:8,background:gradeInfo.bg,border:`1.5px solid ${gradeInfo.borderColor}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:900,color:gradeInfo.color,flexShrink:0,letterSpacing:"-0.5px"}}>
                 {gradeInfo.grade}
               </div>
-              <div style={{fontSize:15,fontWeight:700,color:"#f1f5f9",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{set.title}</div>
+              <div style={{fontSize:15,fontWeight:700,color:"#f1f5f9",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",flex:1,minWidth:0}}>{set.title}</div>
+              <button onClick={()=>setRenameKey(key)} title="Rename" style={{background:"none",border:"none",color:"#64748b",fontSize:13,cursor:"pointer",padding:2,flexShrink:0,lineHeight:1}}>✏️</button>
             </div>
             <div style={{color:"#64748b",fontSize:11,marginBottom:8,paddingLeft:36}}>
               {set.count} Qs · {new Date(set.savedAt).toLocaleDateString("en-IN",{day:"numeric",month:"short",year:"numeric"})}
@@ -2191,7 +2310,6 @@ export default function App() {
           </div>
           <div style={{display:"flex",flexDirection:"column",gap:5,flexShrink:0}}>
             <button onClick={()=>{setActiveSet(set);setActiveKey(key);setTopic("All Topics");setMode("full");setQCount("All");setScreen("home");}} style={{background:"linear-gradient(90deg,#0d9488,#2dd4bf)",color:"#0f172a",border:"none",borderRadius:8,padding:"8px 14px",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Practice →</button>
-            <button onClick={()=>setRenameKey(key)} style={{background:"#161b22",color:"#60a5fa",border:"none",borderRadius:8,padding:"5px 14px",fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>✏️ Rename</button>
             <button onClick={()=>setMoveSetKey(key)} style={{background:"#161b22",color:"#fbbf24",border:"none",borderRadius:8,padding:"5px 14px",fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>📁 Move</button>
             <button onClick={()=>setExportSet(set)} style={{background:"#161b22",color:"#2dd4bf",border:"1px solid #2dd4bf30",borderRadius:8,padding:"5px 14px",fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>⬇ Export</button>
             <button onClick={()=>setDelKey(key)} style={{background:"#161b22",color:"#f87171",border:"none",borderRadius:8,padding:"5px 14px",fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>🗑️ Delete</button>
@@ -2238,8 +2356,27 @@ export default function App() {
 
   // ── Analytics ───────────────────────────────────────────────────────��────────
   if (screen === "analytics") return (
-    <AnalyticsScreen analytics={analytics||{}} lib={lib||{}} onBack={()=>setScreen("library")}
-      onReset={()=>{ const empty={sessions:[],totalAttempted:0,totalCorrect:0,totalWrong:0,totalSkipped:0}; persistAnalytics(empty); showToast("🗑 Analytics reset"); setScreen("library"); }}/>
+    <>
+      {revSheet.open && (
+        <div style={{position:"fixed",inset:0,background:"#000000cc",zIndex:300,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+          <div style={{background:"#161b22",borderRadius:16,padding:20,maxWidth:480,width:"100%",border:"1px solid #21262d",maxHeight:"85vh",display:"flex",flexDirection:"column"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+              <div style={{color:"#a78bfa",fontSize:14,fontWeight:700}}>📋 Your Revision Sheet</div>
+              <button onClick={()=>setRevSheet(p=>({...p,open:false}))} style={{background:"none",border:"none",color:"#64748b",fontSize:18,cursor:"pointer",lineHeight:1}}>✕</button>
+            </div>
+            {revSheet.loading && <div style={{color:"#a78bfa",fontSize:13,textAlign:"center",padding:32}}>✨ Generating your personalised revision sheet…</div>}
+            {revSheet.error && <div style={{color:"#fca5a5",fontSize:12,background:"#2d0a0a",borderRadius:10,padding:12}}>{revSheet.error}</div>}
+            {revSheet.text && (
+              <div style={{overflowY:"auto",flex:1}}>
+                <pre style={{color:"#e2e8f0",fontSize:12,lineHeight:1.8,whiteSpace:"pre-wrap",fontFamily:"'Segoe UI',sans-serif",margin:0}}>{revSheet.text}</pre>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+      <AnalyticsScreen analytics={analytics||{}} lib={lib||{}} rev={rev||{}} onRevisionSheet={()=>openRevSheet(analytics,rev,lib)} onBack={()=>setScreen("library")}
+        onReset={()=>{ const empty={sessions:[],totalAttempted:0,totalCorrect:0,totalWrong:0,totalSkipped:0}; persistAnalytics(empty); showToast("🗑 Analytics reset"); setScreen("library"); }}/>
+    </>
   );
 
   // ── Settings ───────────────────────────────────────────────────────────────
@@ -2909,7 +3046,58 @@ export default function App() {
             <div style={{color:qa?.correct?"#4ade80":"#fca5a5",fontSize:10,fontWeight:700,marginBottom:5}}>
               {qa?.skipped?"⏭ SKIPPED — ":qa?.correct?"✓ CORRECT — ":"✗ INCORRECT — "}💡 EXPLANATION
             </div>
-            <p style={{color:qa?.correct?"#86efac":"#fca5a5",fontSize:12,lineHeight:1.6,margin:0}}>{q.explanation||"No explanation provided."}</p>
+            <p style={{color:qa?.correct?"#86efac":"#fca5a5",fontSize:12,lineHeight:1.6,margin:"0 0 10px"}}>{q.explanation||"No explanation provided."}</p>
+            <button onClick={doUndo} style={{background:"none",border:"1px solid #64748b55",color:"#94a3b8",borderRadius:8,padding:"6px 12px",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit",marginBottom:8}}>
+              ↺ Change answer
+            </button>
+            {/* ── AI Doubt Chat ─────────────────────────────────────────── */}
+            {(() => {
+              const c = aiChat[q.id] || {};
+              return (
+                <>
+                  {c.explainText && (
+                    <div style={{background:"#0d1a2e",borderRadius:8,padding:10,marginBottom:8,border:"1px solid #1e3a5f"}}>
+                      <div style={{color:"#60a5fa",fontSize:10,fontWeight:700,marginBottom:4}}>🤖 AI DEEPER EXPLANATION</div>
+                      <p style={{color:"#93c5fd",fontSize:12,lineHeight:1.6,margin:0}}>{c.explainText}</p>
+                    </div>
+                  )}
+                  {(!c.explainText || !c.chatOpen) && (
+                    <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                      {!c.explainText && (
+                        <button onClick={()=>aiExplainFor(q,qa)} disabled={c.explainLoading} style={{background:"linear-gradient(135deg,#1e3a5f22,#1a0f2e22)",border:"1px solid #3b82f655",borderRadius:99,padding:"7px 14px 7px 10px",fontSize:11,fontWeight:700,color:"#93c5fd",display:"flex",alignItems:"center",gap:6,cursor:c.explainLoading?"wait":"pointer",fontFamily:"inherit"}}>
+                          <SparkIcon size={13}/> {c.explainLoading?"Thinking…":"Explain with AI"}
+                        </button>
+                      )}
+                      {!c.chatOpen && (
+                        <button onClick={()=>aiChatUpdate(q.id,{chatOpen:true})} style={{background:"linear-gradient(135deg,#2e106522,#1a0f2e22)",border:"1px solid #a78bfa55",borderRadius:99,padding:"7px 14px 7px 10px",fontSize:11,fontWeight:700,color:"#c4b5fd",display:"flex",alignItems:"center",gap:6,cursor:"pointer",fontFamily:"inherit"}}>
+                          <SparkIcon size={13}/> {c.explainText ? "Ask AI a follow-up" : "Ask AI a doubt"}
+                        </button>
+                      )}
+                    </div>
+                  )}
+                  {c.explainError && <div style={{color:"#fca5a5",fontSize:11,marginTop:4}}>⚠️ {c.explainError}</div>}
+                  {c.chatOpen && (
+                    <div style={{marginTop:8,background:"#0d1117",borderRadius:10,padding:10,border:"1px solid #1e293b"}}>
+                      <div style={{color:"#a78bfa",fontSize:10,fontWeight:700,marginBottom:8}}>💬 DOUBT CHAT</div>
+                      {(c.msgs||[]).map((m,i)=>(
+                        <div key={i} style={{marginBottom:8,display:"flex",flexDirection:"column",alignItems:m.role==="user"?"flex-end":"flex-start"}}>
+                          <div style={{maxWidth:"88%",background:m.role==="user"?"#1e3a5f":"#1a0f2e",color:m.role==="user"?"#93c5fd":"#c4b5fd",borderRadius:8,padding:"7px 10px",fontSize:12,lineHeight:1.5}}>
+                            {m.role==="ai" && <span style={{fontSize:10,fontWeight:700,display:"block",marginBottom:3,color:"#a78bfa"}}>🤖 AI</span>}
+                            {m.text}
+                          </div>
+                        </div>
+                      ))}
+                      {c.chatLoading && <div style={{color:"#a78bfa",fontSize:11,marginBottom:6}}>🤖 Thinking…</div>}
+                      {c.chatError && <div style={{color:"#fca5a5",fontSize:11,marginBottom:6}}>⚠️ {c.chatError}</div>}
+                      <div style={{display:"flex",gap:6,marginTop:4}}>
+                        <input value={c.input||""} onChange={e=>aiChatUpdate(q.id,{input:e.target.value})} onKeyDown={e=>{if(e.key==="Enter"&&(c.input||"").trim()&&!c.chatLoading)aiDoubtSend(q,(c.input||"").trim());}} placeholder="Type your doubt… (Enter to send)" style={{flex:1,background:"#161b22",border:"1px solid #21262d",borderRadius:8,padding:"7px 10px",color:"#f1f5f9",fontSize:12,fontFamily:"inherit",outline:"none"}}/>
+                        <button onClick={()=>{if((c.input||"").trim()&&!c.chatLoading)aiDoubtSend(q,(c.input||"").trim());}} disabled={!(c.input||"").trim()||c.chatLoading} style={{background:"#7c3aed",color:"#fff",border:"none",borderRadius:8,padding:"7px 12px",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Send</button>
+                      </div>
+                    </div>
+                  )}
+                </>
+              );
+            })()}
           </div>
         )}
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:7,marginBottom:12}}>
