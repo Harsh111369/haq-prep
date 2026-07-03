@@ -3385,11 +3385,13 @@ export default function App() {
                           <SparkIcon size={13}/> {c.explainText ? "Ask AI a follow-up" : "Ask AI a doubt"}
                         </button>
                       )}
-                      {qa && !qa.correct && !qa.skipped && !c.similarQ && (
-                        <button onClick={()=>aiSimilarFor(q)} disabled={c.similarLoading} style={{background:"linear-gradient(135deg,#7c2d1222,#1a0f2e22)",border:"1px solid #fb923c55",borderRadius:99,padding:"7px 14px 7px 10px",fontSize:11,fontWeight:700,color:"#fdba74",display:"flex",alignItems:"center",gap:6,cursor:c.similarLoading?"wait":"pointer",fontFamily:"inherit"}}>
-                          <SparkIcon size={13}/> {c.similarLoading?"Generating…":"🔁 Try a Similar Question"}
-                        </button>
-                      )}
+                    </div>
+                  )}
+                  {qa && !qa.correct && !qa.skipped && !c.similarQ && (
+                    <div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:(!c.explainText || !c.chatOpen)?8:0}}>
+                      <button onClick={()=>aiSimilarFor(q)} disabled={c.similarLoading} style={{background:"linear-gradient(135deg,#7c2d1222,#1a0f2e22)",border:"1px solid #fb923c55",borderRadius:99,padding:"7px 14px 7px 10px",fontSize:11,fontWeight:700,color:"#fdba74",display:"flex",alignItems:"center",gap:6,cursor:c.similarLoading?"wait":"pointer",fontFamily:"inherit"}}>
+                        <SparkIcon size={13}/> {c.similarLoading?"Generating…":"🔁 Try a Similar Question"}
+                      </button>
                     </div>
                   )}
                   {c.similarError && <div style={{color:"#fca5a5",fontSize:11,marginTop:4}}>⚠️ {c.similarError}</div>}
