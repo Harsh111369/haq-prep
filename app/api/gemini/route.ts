@@ -182,6 +182,26 @@ Generate a focused revision sheet with: which weak topics to revise first and wh
       return NextResponse.json({ sheet: text.trim() });
     }
 
+    // ── 4. SIMILAR QUESTION (instant reinforcement after a wrong answer) ──────
+    if (action === "similar") {
+      const { question, options, correctIndex, topic } = payload;
+      const system = `You are an expert exam question writer. Generate exactly one new multiple-choice question that tests the exact same underlying concept as the question given, using a different scenario, wording, or example — not a reworded copy. Match the difficulty and style of the original question. Respond with ONLY valid JSON, no markdown code fences, no extra commentary, in this exact shape: {"q":"...","options":["...","...","...","..."],"answer":0,"explanation":"..."} where "answer" is the 0-based index of the correct option in "options", and "explanation" is a brief 1-2 sentence reason the correct option is right.`;
+      const prompt = `Original question (Topic: ${topic || "General"}):\n${question}\nOptions: ${options.map((o: string, i: number) => `${String.fromCharCode(65+i)}. ${o}`).join(" | ")}\nCorrect answer: ${String.fromCharCode(65+correctIndex)}\n\nGenerate one new question testing the same underlying concept.`;
+
+      const raw = await callGemini([{ role:"user", parts:[{text:prompt}] }], system);
+      let parsed: any;
+      try {
+        const cleaned = raw.trim().replace(/^```json\s*|```$/g, "").trim();
+        parsed = JSON.parse(cleaned);
+      } catch {
+        return NextResponse.json({ error: "AI returned an unexpected format. Try again." }, { status: 502 });
+      }
+      if (!parsed?.q || !Array.isArray(parsed.options) || parsed.options.length < 2 || typeof parsed.answer !== "number") {
+        return NextResponse.json({ error: "AI returned an incomplete question. Try again." }, { status: 502 });
+      }
+      return NextResponse.json({ question: parsed });
+    }
+
     return NextResponse.json({ error: "Unknown action." }, { status: 400 });
   } catch (err: any) {
     return NextResponse.json({ error: err.message || "Server error." }, { status: 500 });

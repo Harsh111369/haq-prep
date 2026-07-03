@@ -1591,6 +1591,22 @@ export default function App() {
     }
   }, [aiChat]);
 
+  const aiSimilarFor = useCallback(async (q) => {
+    const id = q.id;
+    aiChatUpdate(id, { similarLoading: true, similarError: null });
+    try {
+      const { question } = await askGemini("similar", {
+        question: q.q, options: q.options, correctIndex: q.answer, topic: q.topic,
+      });
+      aiChatUpdate(id, { similarLoading: false, similarQ: question, similarSelected: null, similarRevealed: false });
+    } catch (e) {
+      aiChatUpdate(id, { similarLoading: false, similarError: e.message });
+    }
+  }, []);
+  const aiSimilarSelect = (q, idx) => {
+    aiChatUpdate(q.id, { similarSelected: idx, similarRevealed: true });
+  };
+
   // ── Revision Sheet state ─────────────────────────────────────────────────────
   const [revSheet, setRevSheet] = useState({ open:false, loading:false, text:"", error:"" });
   const openRevSheet = useCallback(async (analyticsData, revData, libData) => {
@@ -3288,6 +3304,40 @@ export default function App() {
                         <button onClick={()=>aiChatUpdate(q.id,{chatOpen:true})} style={{background:"linear-gradient(135deg,#2e106522,#1a0f2e22)",border:"1px solid #a78bfa55",borderRadius:99,padding:"7px 14px 7px 10px",fontSize:11,fontWeight:700,color:"#c4b5fd",display:"flex",alignItems:"center",gap:6,cursor:"pointer",fontFamily:"inherit"}}>
                           <SparkIcon size={13}/> {c.explainText ? "Ask AI a follow-up" : "Ask AI a doubt"}
                         </button>
+                      )}
+                      {qa && !qa.correct && !qa.skipped && !c.similarQ && (
+                        <button onClick={()=>aiSimilarFor(q)} disabled={c.similarLoading} style={{background:"linear-gradient(135deg,#7c2d1222,#1a0f2e22)",border:"1px solid #fb923c55",borderRadius:99,padding:"7px 14px 7px 10px",fontSize:11,fontWeight:700,color:"#fdba74",display:"flex",alignItems:"center",gap:6,cursor:c.similarLoading?"wait":"pointer",fontFamily:"inherit"}}>
+                          <SparkIcon size={13}/> {c.similarLoading?"Generating…":"🔁 Try a Similar Question"}
+                        </button>
+                      )}
+                    </div>
+                  )}
+                  {c.similarError && <div style={{color:"#fca5a5",fontSize:11,marginTop:4}}>⚠️ {c.similarError}</div>}
+                  {c.similarQ && (
+                    <div style={{marginTop:10,background:"#1a0f05",border:"1px solid #fb923c40",borderRadius:10,padding:12}}>
+                      <div style={{color:"#fdba74",fontSize:10,fontWeight:700,marginBottom:8,display:"flex",alignItems:"center",gap:5}}><SparkIcon size={12}/> SIMILAR QUESTION — TRY IT</div>
+                      <p style={{color:"#f1f5f9",fontSize:12,lineHeight:1.6,marginBottom:10}}>{c.similarQ.q}</p>
+                      <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:c.similarRevealed?10:0}}>
+                        {c.similarQ.options.map((opt,i) => {
+                          const isCorrect = i===c.similarQ.answer;
+                          const isPicked = i===c.similarSelected;
+                          let bg="#0d1117", border="#21262d", color="#cbd5e1";
+                          if (c.similarRevealed) {
+                            if (isCorrect) { bg="#0f2922"; border="#166534"; color="#4ade80"; }
+                            else if (isPicked) { bg="#2d0a0a"; border="#7f1d1d"; color="#f87171"; }
+                          }
+                          return (
+                            <button key={i} onClick={()=>!c.similarRevealed && aiSimilarSelect(q,i)} disabled={c.similarRevealed} style={{textAlign:"left",background:bg,border:`1px solid ${border}`,borderRadius:8,padding:"8px 10px",color,fontSize:12,cursor:c.similarRevealed?"default":"pointer",fontFamily:"inherit"}}>
+                              {String.fromCharCode(65+i)}. {opt}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      {c.similarRevealed && (
+                        <>
+                          <p style={{color:"#94a3b8",fontSize:11,lineHeight:1.6,margin:"0 0 8px"}}>{c.similarQ.explanation}</p>
+                          <button onClick={()=>aiSimilarFor(q)} disabled={c.similarLoading} style={{background:"none",border:"1px solid #fb923c55",color:"#fdba74",borderRadius:8,padding:"6px 12px",fontSize:11,fontWeight:700,cursor:c.similarLoading?"wait":"pointer",fontFamily:"inherit"}}>{c.similarLoading?"Generating…":"🔁 Another one"}</button>
+                        </>
                       )}
                     </div>
                   )}
