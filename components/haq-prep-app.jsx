@@ -137,18 +137,18 @@ const calcStreak = (sessions) => {
 };
 
 // ── Set Grade Helper ──────────────────────────────────────────────────────────
-// Grade is based on "problem %" — the share of the FULL set that is a problem
-// question: ever answered wrong (cumulative), currently bookmarked, OR never
-// attempted at all (skipping ≠ progress). Requires at least 1 attempted
-// session; unplayed sets stay "?" (ungraded).
-const calcGrade = (sessions, setTitle, revData, totalQs) => {
-  const setSessions = (sessions||[]).filter(s => s.setTitle === setTitle);
-  if (setSessions.length === 0 || totalQs === 0) return { grade: "?", problemPct: 0, color: "#64748b", borderColor: "#33415540", bg: "#1e293b" };
+// Grade is based on "needs review %" — the share of ATTEMPTED questions that
+// are a problem: currently wrong (cumulative incorrect) OR bookmarked. A
+// question that is both wrong and bookmarked is only counted once (union,
+// not sum). Never-attempted questions are NOT counted as problems — a set
+// you've barely started but are doing well on should not look "weak."
+// Requires at least 1 attempted question; unplayed sets stay "?" (ungraded).
+const calcGrade = (revData, totalQs) => {
   const attSet = revData.att || new Set();
+  if (attSet.size === 0 || totalQs === 0) return { grade: "?", problemPct: 0, color: "#64748b", borderColor: "#33415540", bg: "#1e293b" };
   const problemIds = new Set([...revData.bk, ...revData.inc]);
-  for (let i = 1; i <= totalQs; i++) { if (!attSet.has(i)) problemIds.add(i); }
-  const problemPct = Math.round(problemIds.size / totalQs * 100);
-  // Grade scale (based on problem % of the full set, not just attempted questions)
+  const problemPct = Math.round(problemIds.size / attSet.size * 100);
+  // Grade scale (based on problem % of ATTEMPTED questions, not the full set)
   let grade, color, borderColor, bg;
   if (problemPct <= 3) {
     grade = "S"; color = "#2dd4bf"; borderColor = "#2dd4bf50"; bg = "#0d2a2a";
@@ -1611,6 +1611,7 @@ export default function App() {
   const [showFinish, setShowFinish]   = useState(false);
   const timerRef                      = useRef(null);
   const totalRef                      = useRef(null);
+  const prevRevSnapshotRef            = useRef(null); // revData clone taken right before finish() merges this session's results, for accurate before/after grade comparison
 
   // ── On mount: decide auth state ───────────────────────────────────────���─────
   useEffect(() => {
@@ -2160,6 +2161,8 @@ export default function App() {
       else if (qa?.skipped) topicStats[t].skipped++;
       else if (qa&&qa.selected!==null) topicStats[t].wrong++;
     });
+    const beforeRev = getRevData(activeKey);
+    prevRevSnapshotRef.current = { bk: new Set(beforeRev.bk), inc: new Set(beforeRev.inc), att: new Set(beforeRev.att) };
     saveRevData(activeKey, a, b);
     saveSession(a, tTotal, activeSet?.title||"Unknown", topicStats);
     const finalBk = getRevData(activeKey).bk;
@@ -2293,7 +2296,7 @@ export default function App() {
             <div style={{color:"#64748b",fontSize:11,marginBottom:8,paddingLeft:36}}>
               {set.count} Qs · {new Date(set.savedAt).toLocaleDateString("en-IN",{day:"numeric",month:"short",year:"numeric"})}
               {bestAcc !== null && <span style={{color:"#a78bfa",marginLeft:8}}>· Best {bestAcc}%</span>}
-              {gradeInfo.grade !== "?" && <span style={{color:gradeInfo.color,marginLeft:8}}>· {gradeInfo.problemPct}% needs work</span>}
+              {gradeInfo.grade !== "?" && <span style={{color:gradeInfo.color,marginLeft:8}}>· {new Set([...d.bk,...d.inc]).size} of {d.att.size} attempted need review ({gradeInfo.problemPct}%)</span>}
             </div>
             <div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:6}}>
               {d.bk.size>0 && <span style={{background:"#a78bfa22",color:"#a78bfa",borderRadius:6,padding:"2px 8px",fontSize:10,fontWeight:700}}>🔖 {d.bk.size}</span>}
@@ -2404,12 +2407,37 @@ export default function App() {
     const GRADE_ORDER = { D:0, C:1, B:2, A:3, S:4, "?":5 };
     const gradedSets = unfiledSets.map(([key, set]) => {
       const d = getRevData(key);
-      const g = calcGrade(analytics?.sessions||[], set.title, d, set.questions?.length||set.count||0);
+      const g = calcGrade(d, set.questions?.length||set.count||0);
       return [key, set, d, g];
     });
     const sortedSets = focusSort
       ? [...gradedSets].sort((a,b) => (GRADE_ORDER[a[3].grade]??5) - (GRADE_ORDER[b[3].grade]??5))
       : gradedSets;
+
+    // Needs-Revision ranking — folder-wide and set-wide, using the SAME calcGrade
+    // formula as the per-card grade badges (attempted-only denominator, union of
+    // wrong+bookmarked, unattempted sets excluded rather than counted as "weak").
+    const allGradedForRanking = sets.map(([key,set]) => {
+      const d = getRevData(key);
+      const g = calcGrade(d, set.questions?.length||set.count||0);
+      return { key, set, d, g };
+    }).filter(x => x.g.grade !== "?");
+    const weakestSet = allGradedForRanking.length>0
+      ? allGradedForRanking.reduce((worst,cur)=>cur.g.problemPct>worst.g.problemPct?cur:worst)
+      : null;
+    const folderScores = folderList.map(([fkey,folder]) => {
+      let needCount=0, attCount=0;
+      sets.filter(([,s])=>s.folderId===fkey).forEach(([key]) => {
+        const d = getRevData(key);
+        needCount += new Set([...d.bk,...d.inc]).size;
+        attCount += d.att.size;
+      });
+      return { fkey, folder, needCount, attCount, pct: attCount>0?Math.round(needCount/attCount*100):null };
+    }).filter(f=>f.pct!==null);
+    const weakestFolder = folderScores.length>0
+      ? folderScores.reduce((worst,cur)=>cur.pct>worst.pct?cur:worst)
+      : null;
+
     return (
       <div style={bg}>
         {showJson && <JsonModal onSave={handleSave} onClose={()=>setShowJson(false)} folders={folders}/>}
@@ -2516,6 +2544,36 @@ export default function App() {
             </div>
           )}
 
+          {(weakestFolder || weakestSet) && (
+            <div style={{background:"#161b22",borderRadius:14,padding:"14px 16px",marginBottom:16,border:"1px solid #7f1d1d"}}>
+              <div style={{color:"#fca5a5",fontSize:11,fontWeight:700,letterSpacing:1,marginBottom:10}}>🎯 NEEDS REVISION</div>
+              {weakestFolder && (
+                <div onClick={()=>{setActiveFolderKey(weakestFolder.fkey);setScreen("folder");}} role="button" tabIndex={0}
+                  onKeyDown={(e)=>{ if(e.key==="Enter"||e.key===" "){ e.preventDefault(); setActiveFolderKey(weakestFolder.fkey); setScreen("folder"); } }}
+                  style={{cursor:"pointer",marginBottom:weakestSet?12:0}}>
+                  <div style={{color:"#64748b",fontSize:10}}>WEAKEST FOLDER</div>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:8}}>
+                    <div style={{color:"#f1f5f9",fontSize:13,fontWeight:700,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",flex:1,minWidth:0}}>📁 {weakestFolder.folder.name}</div>
+                    <div style={{color:"#f87171",fontSize:16,fontWeight:700,flexShrink:0}}>{weakestFolder.pct}%</div>
+                  </div>
+                  <div style={{color:"#fca5a5",fontSize:10.5,marginTop:1}}>{weakestFolder.needCount} of {weakestFolder.attCount} attempted need review</div>
+                </div>
+              )}
+              {weakestSet && (
+                <div onClick={()=>{setActiveSet(weakestSet.set);setActiveKey(weakestSet.key);setTopic("All Topics");setMode("full");setQCount("All");setScreen("home");}} role="button" tabIndex={0}
+                  onKeyDown={(e)=>{ if(e.key==="Enter"||e.key===" "){ e.preventDefault(); setActiveSet(weakestSet.set); setActiveKey(weakestSet.key); setTopic("All Topics"); setMode("full"); setQCount("All"); setScreen("home"); } }}
+                  style={{cursor:"pointer"}}>
+                  <div style={{color:"#64748b",fontSize:10}}>WEAKEST SET</div>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:8}}>
+                    <div style={{color:"#f1f5f9",fontSize:13,fontWeight:700,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",flex:1,minWidth:0}}>{weakestSet.set.title}</div>
+                    <div style={{color:"#f87171",fontSize:16,fontWeight:700,flexShrink:0}}>{weakestSet.g.problemPct}%</div>
+                  </div>
+                  <div style={{color:"#fca5a5",fontSize:10.5,marginTop:1}}>{new Set([...weakestSet.d.bk,...weakestSet.d.inc]).size} of {weakestSet.d.att.size} attempted need review</div>
+                </div>
+              )}
+            </div>
+          )}
+
           <div style={{display:"flex",gap:8,marginBottom:8}}>
             <button onClick={()=>setShowJson(true)} style={{flex:1,background:"linear-gradient(90deg,#0d9488,#2dd4bf)",color:"#0f172a",border:"none",borderRadius:10,padding:"11px 14px",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>+ Import JSON</button>
           </div>
@@ -2586,7 +2644,21 @@ export default function App() {
             </div>
           )}
 
-          {sortedSets.map(renderSetCard)}
+          {(() => {
+            const gradedOnlySets = sortedSets.filter(([,,,g]) => g.grade !== "?");
+            const notStartedSets = sortedSets.filter(([,,,g]) => g.grade === "?");
+            return (
+              <>
+                {gradedOnlySets.map(renderSetCard)}
+                {notStartedSets.length > 0 && (
+                  <>
+                    <div style={{color:"#64748b",fontSize:11,fontWeight:700,marginTop:gradedOnlySets.length>0?16:0,marginBottom:8,paddingLeft:2,textTransform:"uppercase",letterSpacing:"0.5px"}}>○ Not Started</div>
+                    {notStartedSets.map(renderSetCard)}
+                  </>
+                )}
+              </>
+            );
+          })()}
         </div>
       </div>
     );
@@ -2601,12 +2673,15 @@ export default function App() {
     const GRADE_ORDER = { D:0, C:1, B:2, A:3, S:4, "?":5 };
     const gradedFolderSets = folderSetEntries.map(([key, set]) => {
       const d = getRevData(key);
-      const g = calcGrade(analytics?.sessions||[], set.title, d, set.questions?.length||set.count||0);
+      const g = calcGrade(d, set.questions?.length||set.count||0);
       return [key, set, d, g];
     });
     const sortedFolderSets = focusSort
       ? [...gradedFolderSets].sort((a,b) => (GRADE_ORDER[a[3].grade]??5) - (GRADE_ORDER[b[3].grade]??5))
       : gradedFolderSets;
+    let folderNeedCount=0, folderAttCount=0;
+    gradedFolderSets.forEach(([,,d]) => { folderNeedCount += new Set([...d.bk,...d.inc]).size; folderAttCount += d.att.size; });
+    const folderPct = folderAttCount>0 ? Math.round(folderNeedCount/folderAttCount*100) : null;
     return (
       <div style={bg}>
         {showJson && <JsonModal onSave={handleSave} onClose={()=>setShowJson(false)} folders={folders} defaultFolderId={activeFolderKey}/>}
@@ -2654,7 +2729,7 @@ export default function App() {
                 <span style={{fontSize:26}}>📁</span>
                 <div style={{minWidth:0}}>
                   <div style={{fontSize:18,fontWeight:800,color:"#f1f5f9",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{folder.name}</div>
-                  <div style={{color:"#64748b",fontSize:11,marginTop:1}}>{folderSetEntries.length} set{folderSetEntries.length!==1?"s":""}</div>
+                  <div style={{color:"#64748b",fontSize:11,marginTop:1}}>{folderSetEntries.length} set{folderSetEntries.length!==1?"s":""}{folderPct!==null && <span style={{color:folderPct>=50?"#f87171":folderPct>=25?"#fbbf24":"#4ade80"}}> · {folderNeedCount} of {folderAttCount} attempted need review ({folderPct}%)</span>}</div>
                 </div>
               </div>
               <div style={{display:"flex",gap:6,flexShrink:0}}>
@@ -2697,7 +2772,21 @@ export default function App() {
             </div>
           )}
 
-          {sortedFolderSets.map(renderSetCard)}
+          {(() => {
+            const gradedOnlyFolderSets = sortedFolderSets.filter(([,,,g]) => g.grade !== "?");
+            const notStartedFolderSets = sortedFolderSets.filter(([,,,g]) => g.grade === "?");
+            return (
+              <>
+                {gradedOnlyFolderSets.map(renderSetCard)}
+                {notStartedFolderSets.length > 0 && (
+                  <>
+                    <div style={{color:"#64748b",fontSize:11,fontWeight:700,marginTop:gradedOnlyFolderSets.length>0?16:0,marginBottom:8,paddingLeft:2,textTransform:"uppercase",letterSpacing:"0.5px"}}>○ Not Started</div>
+                    {notStartedFolderSets.map(renderSetCard)}
+                  </>
+                )}
+              </>
+            );
+          })()}
         </div>
       </div>
     );
@@ -2794,11 +2883,13 @@ export default function App() {
     const pct = maxMarks>0?Math.round(marks/maxMarks*100):0;
     const grade = pct>=80?"Excellent 🏆":pct>=60?"Good 👍":pct>=40?"Needs Work 📖":"Keep Revising 💪";
     const upd = getRevData(activeKey);
-    // Grade before this session (using sessions excluding the last one)
-    const allSessions = analytics?.sessions||[];
-    const prevSessions = allSessions.slice(0, -1); // all except the just-saved session
-    const prevGradeInfo = calcGrade(prevSessions, activeSet?.title||"", upd, activeSet?.questions?.length||0);
-    const newGradeInfo  = calcGrade(allSessions,  activeSet?.title||"", upd, activeSet?.questions?.length||0);
+    // Grade before this session — a real snapshot taken right before this session's
+    // results were merged in finish(), not reconstructed (revData merges are cumulative
+    // unions, so subtracting this session's answers from the after-state wouldn't be
+    // accurate if a question was already attempted/wrong in an earlier session too).
+    const before = prevRevSnapshotRef.current || upd;
+    const prevGradeInfo = calcGrade(before, activeSet?.questions?.length||0);
+    const newGradeInfo  = calcGrade(upd,     activeSet?.questions?.length||0);
     const gradeChanged  = prevGradeInfo.grade !== newGradeInfo.grade;
     const topicStats = {};
     qs.forEach(q => {
