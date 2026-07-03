@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useId } from "react";
 
 // Firebase — proper npm package imports (replaces the previous gstatic.com CDN imports)
 import { initializeApp, getApps } from "firebase/app";
@@ -137,18 +137,18 @@ const calcStreak = (sessions) => {
 };
 
 // ── Set Grade Helper ──────────────────────────────────────────────────────────
-// Grade is based on "problem %" — the share of the FULL set that is a problem
-// question: ever answered wrong (cumulative), currently bookmarked, OR never
-// attempted at all (skipping ≠ progress). Requires at least 1 attempted
-// session; unplayed sets stay "?" (ungraded).
-const calcGrade = (sessions, setTitle, revData, totalQs) => {
-  const setSessions = (sessions||[]).filter(s => s.setTitle === setTitle);
-  if (setSessions.length === 0 || totalQs === 0) return { grade: "?", problemPct: 0, color: "#64748b", borderColor: "#33415540", bg: "#1e293b" };
+// Grade is based on "needs review %" — the share of ATTEMPTED questions that
+// are a problem: currently wrong (cumulative incorrect) OR bookmarked. A
+// question that is both wrong and bookmarked is only counted once (union,
+// not sum). Never-attempted questions are NOT counted as problems — a set
+// you've barely started but are doing well on should not look "weak."
+// Requires at least 1 attempted question; unplayed sets stay "?" (ungraded).
+const calcGrade = (revData, totalQs) => {
   const attSet = revData.att || new Set();
+  if (attSet.size === 0 || totalQs === 0) return { grade: "?", problemPct: 0, color: "#64748b", borderColor: "#33415540", bg: "#1e293b" };
   const problemIds = new Set([...revData.bk, ...revData.inc]);
-  for (let i = 1; i <= totalQs; i++) { if (!attSet.has(i)) problemIds.add(i); }
-  const problemPct = Math.round(problemIds.size / totalQs * 100);
-  // Grade scale (based on problem % of the full set, not just attempted questions)
+  const problemPct = Math.round(problemIds.size / attSet.size * 100);
+  // Grade scale (based on problem % of ATTEMPTED questions, not the full set)
   let grade, color, borderColor, bg;
   if (problemPct <= 3) {
     grade = "S"; color = "#2dd4bf"; borderColor = "#2dd4bf50"; bg = "#0d2a2a";
@@ -528,22 +528,40 @@ function SplashScreen({ user, onGoogle, onGuest, onContinue, onSignOut, loading,
       <div style={{position:"absolute",top:-60,right:-60,width:320,height:320,background:"radial-gradient(circle, #2dd4bf20 0%, transparent 70%)",pointerEvents:"none"}}/>
       <div style={{position:"absolute",bottom:80,left:-40,width:200,height:200,background:"radial-gradient(circle, #0d948815 0%, transparent 70%)",pointerEvents:"none"}}/>
 
+      {/* Wave ribbon — ambient background animation, does not affect layout */}
+      <div style={{position:"absolute",left:0,right:0,bottom:0,height:260,zIndex:0,pointerEvents:"none",overflow:"hidden"}}>
+        <svg className="haq-wave" viewBox="0 0 800 200" preserveAspectRatio="none" style={{position:"absolute",bottom:0,left:0,width:"200%",height:"100%",animation:"haqWaveScroll 14s linear infinite"}}>
+          <path d="M0,100 C100,60 200,140 300,100 C400,60 500,140 600,100 C700,60 800,140 900,100 C1000,60 1100,140 1200,100 C1300,60 1400,140 1500,100 C1600,60 1700,140 1800,100 L1600,200 L0,200 Z" fill="#2dd4bf" opacity="0.12"/>
+        </svg>
+        <svg className="haq-wave haq-wave-2" viewBox="0 0 800 200" preserveAspectRatio="none" style={{position:"absolute",bottom:0,left:0,width:"200%",height:"100%",opacity:0.5,animation:"haqWaveScroll 20s linear infinite reverse"}}>
+          <path d="M0,120 C120,80 220,160 340,120 C460,80 560,160 680,120 C800,80 900,160 1020,120 C1140,80 1240,160 1360,120 C1480,80 1580,160 1700,120 L1600,200 L0,200 Z" fill="#8ab4f8" opacity="0.10"/>
+        </svg>
+      </div>
+
       {/* Top bar */}
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",zIndex:1}}>
         <div style={{display:"flex",alignItems:"center",gap:12}}>
           <div style={{width:56,height:56,borderRadius:14,overflow:"hidden",display:"flex",alignItems:"center",justifyContent:"center",boxShadow:"0 0 20px #2dd4bf40"}}>
             <img src="/icon-192.png" alt="HAQ PREP logo" width={56} height={56} style={{width:"100%",height:"100%",objectFit:"cover"}}/>
           </div>
-          <span style={{color:"#f1f5f9",fontSize:19,fontWeight:700,letterSpacing:"0.3px"}}>HAQ PREP</span>
+          <span style={{fontFamily:"'Courier New',monospace",color:"#f1f5f9",fontSize:19,fontWeight:700,letterSpacing:"-0.3px"}}>haq<span style={{color:"#2dd4bf"}}>/</span>prep</span>
         </div>
         <div style={{background:"#161b22",border:"1px solid #21262d",borderRadius:8,padding:"5px 12px",color:"#94a3b8",fontSize:12,fontWeight:600}}>v10.1</div>
       </div>
 
       {/* Hero */}
       <div style={{flex:1,display:"flex",flexDirection:"column",justifyContent:"center",zIndex:1,paddingTop:40}}>
-        <div style={{display:"inline-flex",alignItems:"center",gap:7,border:"1.5px solid #21262d",borderRadius:99,padding:"7px 16px",marginBottom:36,width:"fit-content"}}>
-          <div style={{width:8,height:8,borderRadius:"50%",background:"#2dd4bf"}}/>
-          <span style={{color:"#2dd4bf",fontSize:11,fontWeight:700,letterSpacing:"1.5px"}}>AI-POWERED CBT PRACTICE</span>
+        {/* Merged eyebrow pill — CBT label + Gemini credit in one capsule, animated as a whole */}
+        <div className="haq-gemini-wrap" style={{width:"fit-content",marginBottom:36,borderRadius:99,padding:"1.5px"}}>
+          <div className="haq-gemini-pill" style={{display:"flex",alignItems:"center",gap:8,background:"#0d1117",borderRadius:99,padding:"7px 15px",position:"relative",overflow:"hidden"}}>
+            <div style={{width:6,height:6,borderRadius:"50%",background:"#2dd4bf",position:"relative",zIndex:1,flexShrink:0}}/>
+            <span style={{position:"relative",zIndex:1,fontSize:10,fontWeight:700,letterSpacing:"1px",color:"#2dd4bf",whiteSpace:"nowrap"}}>AI-POWERED CBT</span>
+            <div style={{position:"relative",zIndex:1,width:1,height:12,background:"#2c3542"}}/>
+            <svg className="haq-spark" width="12" height="12" viewBox="0 0 28 28" style={{position:"relative",zIndex:1}}>
+              <path d="M14 3c0.8 3.3 1.9 6.3 3.4 8.2C18.9 13 21.4 14 24 15c-2.6 1-5.1 2-6.6 3.8C15.9 20.7 14.8 23.7 14 27c-0.8-3.3-1.9-6.3-3.4-8.2C9.1 17 6.6 16 4 15c2.6-1 5.1-2 6.6-3.8C11.9 9.3 13.1 6.3 14 3z" fill="#8ab4f8"/>
+            </svg>
+            <span className="haq-gemini-text" style={{position:"relative",zIndex:1,fontSize:10,fontWeight:700,letterSpacing:"1px",whiteSpace:"nowrap"}}>GEMINI</span>
+          </div>
         </div>
 
         <div style={{marginBottom:44}}>
@@ -611,7 +629,38 @@ function SplashScreen({ user, onGoogle, onGuest, onContinue, onSignOut, loading,
         <span style={{color:"#475569",fontSize:12}}>By <span style={{color:"#2dd4bf",fontWeight:600}}>Harsh Anand</span> · Built with AI</span>
       </div>
 
-      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      <style>{`
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        @keyframes haqWaveScroll { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+
+        .haq-gemini-wrap {
+          background: conic-gradient(from var(--haq-angle, 0deg), #2dd4bf, #8ab4f8, #a78bfa, #2dd4bf);
+          animation: haqRotateBorder 4s linear infinite;
+        }
+        @property --haq-angle { syntax: '<angle>'; initial-value: 0deg; inherits: false; }
+        @keyframes haqRotateBorder { to { --haq-angle: 360deg; } }
+
+        .haq-gemini-pill::before {
+          content: '';
+          position: absolute; inset: -8px;
+          background: radial-gradient(circle, rgba(138,180,248,0.25), transparent 70%);
+          animation: haqBreathe 2.6s ease-in-out infinite;
+          z-index: 0;
+        }
+        @keyframes haqBreathe { 0%,100% { opacity:0.35; transform:scale(0.9); } 50% { opacity:0.85; transform:scale(1.15); } }
+
+        .haq-spark { animation: haqSparkle 2.6s ease-in-out infinite; transform-origin: center; }
+        @keyframes haqSparkle { 0%,100% { transform:scale(1) rotate(0deg); filter:brightness(1); } 50% { transform:scale(1.18) rotate(8deg); filter:brightness(1.4); } }
+
+        .haq-gemini-text {
+          background: linear-gradient(90deg, #8ab4f8, #2dd4bf, #a78bfa, #8ab4f8);
+          background-size: 300% 100%;
+          -webkit-background-clip: text; background-clip: text; color: transparent;
+          animation: haqShimmer 3.5s linear infinite;
+        }
+        @keyframes haqShimmer { 0% { background-position:0% 50%; } 100% { background-position:300% 50%; } }
+      `}</style>
     </div>
   );
 }
@@ -780,6 +829,33 @@ function AboutScreen({ onStart, onHome }) {
 }
 
 // ── Review Card ───────────────────────────────────────────────────────────────
+// ── Gemini AI helper ─────────────────────────────────────────────────────────
+function SparkIcon({ size = 14 }) {
+  const gradId = "sparkGrad-" + useId();
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" style={{flexShrink:0}}>
+      <defs>
+        <linearGradient id={gradId} x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stopColor="#60a5fa"/>
+          <stop offset="100%" stopColor="#a78bfa"/>
+        </linearGradient>
+      </defs>
+      <path d="M12 2 L14.2 9.8 L22 12 L14.2 14.2 L12 22 L9.8 14.2 L2 12 L9.8 9.8 Z" fill={`url(#${gradId})`}/>
+    </svg>
+  );
+}
+
+async function askGemini(action, payload) {
+  const res = await fetch("/api/gemini", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action, payload }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || "AI request failed.");
+  return data;
+}
+
 function ReviewCard({ q, a }) {
   const [open, setOpen] = useState(false);
   const col = a?.correct ? "#4ade80" : a?.skipped ? "#fbbf24" : "#f87171";
@@ -811,6 +887,71 @@ function ReviewCard({ q, a }) {
 }
 
 // ── Export Modal ──────────────────────────────────────────────────────────────
+// ── Help / Feature Guide Modal ──────────────────────────────────────────────
+function HelpModal({ onClose }) {
+  const [openId, setOpenId] = useState(null);
+  const sections = [
+    { id:"import", icon:"📥", title:"Importing Sets",
+      body:["Generate MCQs with any AI (Claude, ChatGPT, etc.) from your notes/PDF as JSON.",
+            "Tap + Import JSON → paste the JSON or upload a .json file directly.",
+            "Give it a name, pick a folder (optional), and save."] },
+    { id:"export", icon:"⬇",  title:"Exporting Sets",
+      body:["Single set: open a set's card → Export → Copy JSON or Download as a file.",
+            "Whole folder: open the folder → Export → downloads every set in it as one file.",
+            "Full library: Settings → Library Backup → Export → downloads everything (sets, folders, bookmarks, SRS progress)."] },
+    { id:"restore", icon:"🗄️", title:"Backup & Restore",
+      body:["Settings → Library Backup → Restore → pick a backup .json file.",
+            "Restoring merges into your current library — nothing existing gets deleted. If a set shares an ID with one already in your library, that set's data is overwritten; everything else stays untouched.",
+            "Signed-in restores sync to your account, so they're there after logging out and back in on any device."] },
+    { id:"folders", icon:"📁", title:"Folders",
+      body:["+ New Folder to create one, then Move a set into it from its card menu.",
+            "Rename or Delete a folder from its own screen (deleting a folder doesn't delete its sets — they move back to Unfiled)."] },
+    { id:"practice", icon:"🎯", title:"Practice Modes",
+      body:["Full Set — every question, with an optional topic filter and question-count limit.",
+            "Bookmarked — only questions you've flagged 🔖 during past attempts.",
+            "Incorrect — only questions you've gotten wrong before.",
+            "SRS Review — questions due today based on spaced repetition.",
+            "Skip a question to come back to it later — it won't reveal the answer, and you can attempt skipped questions in another round before submitting."] },
+    { id:"scoring", icon:"⏱️", title:"Scoring & Timer",
+      body:["+4 for a correct answer, −1 for a wrong one — real CBT-style marking.",
+            "A 90-second per-question timer is on by default; toggle it off anytime before starting."] },
+    { id:"srs", icon:"🔁", title:"Bookmarks & Spaced Repetition",
+      body:["Bookmark any question mid-quiz to flag it for later.",
+            "Answered questions get automatically scheduled for review — correct answers push the next review further out, wrong or skipped ones bring it back sooner."] },
+    { id:"analytics", icon:"📊", title:"Analytics",
+      body:["Tracks every session's score, accuracy, and time per set.",
+            "Each set gets a grade (S/A/B/C/D) based on your recent performance, visible right on its card."] },
+  ];
+  return (
+    <div style={{position:"fixed",inset:0,background:"#000000bb",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+      <div style={{background:"#161b22",borderRadius:20,padding:24,width:"100%",maxWidth:520,border:"1px solid #21262d",maxHeight:"88vh",overflowY:"auto"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+          <h2 style={{color:"#f1f5f9",fontSize:18,margin:0}}>❓ Help & Features</h2>
+          <button onClick={onClose} style={{background:"#0d1117",color:"#94a3b8",border:"none",borderRadius:8,padding:"6px 12px",fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>✕</button>
+        </div>
+        <div style={{color:"#64748b",fontSize:11,marginBottom:16}}>Tap a topic to expand it.</div>
+        {sections.map(s => {
+          const open = openId===s.id;
+          return (
+            <div key={s.id} style={{background:"#0d1117",borderRadius:12,border:"1px solid #21262d",padding:"12px 14px",marginBottom:8}}>
+              <button onClick={()=>setOpenId(open?null:s.id)} style={{width:"100%",display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,background:"none",border:"none",padding:0,cursor:"pointer",fontFamily:"inherit"}}>
+                <span style={{display:"flex",alignItems:"center",gap:8,color:"#f1f5f9",fontSize:13,fontWeight:700}}><span style={{fontSize:15}}>{s.icon}</span>{s.title}</span>
+                <span style={{color:"#2dd4bf",fontSize:9}}>{open?"▲":"▼"}</span>
+              </button>
+              {open && (
+                <ul style={{margin:"10px 0 0",paddingLeft:18,color:"#94a3b8",fontSize:12,lineHeight:1.7}}>
+                  {s.body.map((line,i)=>(<li key={i} style={{marginBottom:4}}>{line}</li>))}
+                </ul>
+              )}
+            </div>
+          );
+        })}
+        <button onClick={onClose} style={{width:"100%",background:"linear-gradient(90deg,#0d9488,#2dd4bf)",color:"#0f172a",border:"none",borderRadius:10,padding:12,fontSize:14,fontWeight:700,cursor:"pointer",fontFamily:"inherit",marginTop:4}}>Got it</button>
+      </div>
+    </div>
+  );
+}
+
 function ExportModal({ set, onClose }) {
   const [copied, setCopied] = useState(false);
   const json = JSON.stringify({ title: set.title, questions: set.questions }, null, 2);
@@ -1170,7 +1311,7 @@ function MoveToFolderModal({ folders, currentFolderId, onMove, onClose }) {
 }
 
 // ── Analytics Screen ──────────────────────────────────────────────────────────
-function AnalyticsScreen({ analytics, lib, onBack, onReset }) {
+function AnalyticsScreen({ analytics, lib, rev, onRevisionSheet, onBack, onReset }) {
   const [confirmReset, setConfirmReset] = useState(false);
   const sessions = analytics?.sessions || [];
   const totalAttempted = analytics?.totalAttempted || 0;
@@ -1278,6 +1419,14 @@ function AnalyticsScreen({ analytics, lib, onBack, onReset }) {
                 ))}
               </div>
             )}
+            <button onClick={onRevisionSheet} style={{width:"100%",background:"linear-gradient(135deg,#1a0f2e,#2e1065)",border:"1px solid #7c3aed55",borderRadius:14,padding:"14px 16px",display:"flex",alignItems:"center",gap:12,cursor:"pointer",fontFamily:"inherit",marginBottom:12}}>
+              <div style={{fontSize:28}}>📋</div>
+              <div style={{textAlign:"left"}}>
+                <div style={{color:"#a78bfa",fontSize:13,fontWeight:700}}>AI Revision Sheet</div>
+                <div style={{color:"#64748b",fontSize:11,marginTop:2}}>Personalised plan based on your weak topics &amp; bookmarks</div>
+              </div>
+              <div style={{marginLeft:"auto",color:"#7c3aed",fontSize:18}}>›</div>
+            </button>
             <div style={card}>
               <div style={{color:"#94a3b8",fontSize:11,fontWeight:700,letterSpacing:1,marginBottom:12}}>LIFETIME STATS</div>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:12}}>
@@ -1407,6 +1556,97 @@ export default function App() {
   const [syncStatus, setSyncStatus]   = useState("idle"); // idle | syncing | synced | error
   const [bootReady, setBootReady]     = useState(false);  // gate: show spinner ~2s on mount while auth resolves
 
+  // ── AI (Gemini) state ───────────────────────────────────────────────────────
+  // aiChat: { [questionId]: { explainLoading, explainText, explainError, chatOpen, msgs:[{role,text}], chatLoading, chatError, input } }
+  const [aiChat, setAiChat] = useState({});
+  const aiChatUpdate = (id, patch) => setAiChat(p => ({ ...p, [id]: { ...(p[id]||{}), ...patch } }));
+
+  const aiExplainFor = useCallback(async (q, qa) => {
+    const id = q.id;
+    aiChatUpdate(id, { explainLoading: true, explainError: null });
+    try {
+      const { explanation } = await askGemini("explain", {
+        question: q.q, options: q.options, correctIndex: q.answer,
+        selectedIndex: qa?.selected ?? null, existingExplanation: q.explanation, topic: q.topic,
+      });
+      aiChatUpdate(id, { explainLoading: false, explainText: explanation });
+    } catch (e) {
+      aiChatUpdate(id, { explainLoading: false, explainError: e.message });
+    }
+  }, []);
+
+  const aiDoubtSend = useCallback(async (q, msgText) => {
+    const id = q.id;
+    const prev = aiChat[id] || {};
+    const newMsgs = [...(prev.msgs||[]), { role:"user", text: msgText }];
+    aiChatUpdate(id, { msgs: newMsgs, chatLoading: true, chatError: null, input: "" });
+    try {
+      const { reply } = await askGemini("doubt", {
+        question: q.q, options: q.options, correctIndex: q.answer,
+        topic: q.topic, history: prev.msgs||[], userMessage: msgText,
+      });
+      aiChatUpdate(id, { msgs: [...newMsgs, { role:"ai", text: reply }], chatLoading: false });
+    } catch (e) {
+      aiChatUpdate(id, { chatLoading: false, chatError: e.message });
+    }
+  }, [aiChat]);
+
+  const aiSimilarFor = useCallback(async (q) => {
+    const id = q.id;
+    aiChatUpdate(id, { similarLoading: true, similarError: null });
+    try {
+      const { question } = await askGemini("similar", {
+        question: q.q, options: q.options, correctIndex: q.answer, topic: q.topic,
+      });
+      aiChatUpdate(id, { similarLoading: false, similarQ: question, similarSelected: null, similarRevealed: false });
+    } catch (e) {
+      aiChatUpdate(id, { similarLoading: false, similarError: e.message });
+    }
+  }, []);
+  const aiSimilarSelect = (q, idx) => {
+    aiChatUpdate(q.id, { similarSelected: idx, similarRevealed: true });
+  };
+
+  // ── Revision Sheet state ─────────────────────────────────────────────────────
+  const [revSheet, setRevSheet] = useState({ open:false, loading:false, text:"", error:"" });
+  const openRevSheet = useCallback(async (analyticsData, revData, libData) => {
+    setRevSheet({ open:true, loading:true, text:"", error:"" });
+    try {
+      const sessions = analyticsData?.sessions || [];
+      const totalCorrect = analyticsData?.totalCorrect || 0;
+      const totalWrong   = analyticsData?.totalWrong   || 0;
+      const overallAcc   = (totalCorrect+totalWrong)>0 ? Math.round(totalCorrect/(totalCorrect+totalWrong)*100) : 0;
+      const weakTopics   = getWeakTopics(sessions);
+
+      // Collect recently wrong question texts (last 20 sessions)
+      const recentSessions = sessions.slice(-20);
+      const wrongQIds = new Set();
+      recentSessions.forEach(s => { if(s.wrongIds) s.wrongIds.forEach(id => wrongQIds.add(id)); });
+      const allQs = Object.values(libData||{}).flatMap(set => set.questions||[]);
+      const recentWrongSamples = allQs.filter(q => wrongQIds.has(q.id)).slice(0,8).map(q=>q.q);
+
+      // Collect bookmarked question texts
+      const bookmarkedSamples = [];
+      Object.entries(revData||{}).forEach(([key, d]) => {
+        const set = (libData||{})[key];
+        if(!set) return;
+        (d.bookmarked||[]).forEach(id => {
+          const q = set.questions?.find(q=>q.id===id);
+          if(q) bookmarkedSamples.push(q.q);
+        });
+      });
+
+      const { sheet } = await askGemini("revision", {
+        weakTopics, overallAcc, totalSessions: sessions.length,
+        recentWrongSamples: recentWrongSamples.slice(0,8),
+        bookmarkedSamples: bookmarkedSamples.slice(0,8),
+      });
+      setRevSheet({ open:true, loading:false, text:sheet, error:"" });
+    } catch(e) {
+      setRevSheet({ open:true, loading:false, text:"", error: e.message });
+    }
+  }, []);
+
   // ── App state ───────────────────────────────────────────────────────────────
   const [appScreen, setAppScreen]     = useState("splash");
   const [lib, setLib]                 = useState(null);
@@ -1417,11 +1657,13 @@ export default function App() {
   const [screen, setScreen]           = useState("library");
   const [showJson, setShowJson]       = useState(false);
   const [delKey, setDelKey]           = useState(null);
+  const [resetKey, setResetKey]       = useState(null);
   const [renameKey, setRenameKey]     = useState(null);
   const [shareSet, setShareSet]       = useState(null);
   const [exportSet, setExportSet]     = useState(null);
   const [pendingImport, setPendingImport] = useState(null); // set decoded from a #import= share link
   const [showBackup, setShowBackup]   = useState(false);
+  const [showHelp, setShowHelp]       = useState(false);
   const [usageDismissedAt, setUsageDismissedAt] = useState(() => {
     try { return parseInt(localStorage.getItem("haq_usage_dismissed")||"0",10); } catch { return 0; }
   });
@@ -1430,6 +1672,7 @@ export default function App() {
   const [showNewFolder, setShowNewFolder]     = useState(false);
   const [renameFolderKey, setRenameFolderKey] = useState(null);
   const [delFolderKey, setDelFolderKey]       = useState(null);
+  const [resetFolderKey, setResetFolderKey]   = useState(null);
   const [moveSetKey, setMoveSetKey]           = useState(null); // set key currently being moved to a folder
   const [toast, setToast]             = useState("");
   const [activeKey, setActiveKey]     = useState(null);
@@ -1452,6 +1695,7 @@ export default function App() {
   const [showFinish, setShowFinish]   = useState(false);
   const timerRef                      = useRef(null);
   const totalRef                      = useRef(null);
+  const prevRevSnapshotRef            = useRef(null); // revData clone taken right before finish() merges this session's results, for accurate before/after grade comparison
 
   // ── On mount: decide auth state ───────────────────────────────────────���─────
   useEffect(() => {
@@ -1793,6 +2037,38 @@ export default function App() {
     return { bk: new Set(d.bookmarked||[]), inc: new Set(d.incorrect||[]), att: new Set(d.attempted||[]) };
   }, [rev]);
 
+  // A question marked wrong/bookmarked but missing from attempted is stale data
+  // (typically from an older backup/schema where 'attempted' wasn't tracked the
+  // same way). Returns how many such questions a set has.
+  const getStaleCount = useCallback(key => {
+    const d = getRevData(key);
+    let n = 0;
+    for (const id of d.bk) if (!d.att.has(id)) n++;
+    for (const id of d.inc) if (!d.att.has(id)) n++;
+    return n;
+  }, [getRevData]);
+
+  // Fix: add any bookmarked/incorrect id missing from attempted INTO attempted.
+  // Being marked wrong/bookmarked is proof the question was attempted at some
+  // point, so this recovers consistency without deleting the wrong/bookmark
+  // flag itself or inventing new information.
+  const fixStaleData = useCallback(async (keys) => {
+    const r = { ...(rev||{}) };
+    let fixedCount = 0;
+    keys.forEach(key => {
+      const d = r[key];
+      if (!d) return;
+      const att = new Set(d.attempted||[]);
+      const before = att.size;
+      (d.bookmarked||[]).forEach(id=>att.add(id));
+      (d.incorrect||[]).forEach(id=>att.add(id));
+      fixedCount += att.size - before;
+      r[key] = { ...d, attempted: [...att] };
+    });
+    await persistRev(r);
+    return fixedCount;
+  }, [rev, persistRev]);
+
   const getSrsData = useCallback(key => (srs||{})[key] || {}, [srs]);
 
   const getSrsDueCount = useCallback(key => {
@@ -1827,6 +2103,7 @@ export default function App() {
     Object.entries(newAns).forEach(([id,a]) => {
       if (a.selected !== null) d.att.add(+id);
       if (!a.correct && !a.skipped) d.inc.add(+id);
+      else if (a.correct) d.inc.delete(+id); // answered correctly this round — no longer "needs review"
     });
     persistRev({...(rev||{}), [key]:{bookmarked:[...d.bk],incorrect:[...d.inc],attempted:[...d.att]}});
   }, [rev, getRevData, persistRev]);
@@ -1880,6 +2157,36 @@ export default function App() {
     } else { saveS(LIB_KEY,l); saveS(REV_KEY,r); saveS(SRS_KEY,s); }
     setDelKey(null);
     showToast("🗑️ Set deleted");
+  };
+
+  // Clears bookmark/incorrect/attempted history for one or more sets — the
+  // set itself, its questions, and its score/session analytics are untouched;
+  // only "needs review" tracking resets, as if the set had never been
+  // attempted. Uses cloudDelete (not persistRev's upsert-only save) so the
+  // Firestore doc is actually removed for signed-in users, not left stale.
+  const doResetProgress = async (keys) => {
+    const r = {...(rev||{})};
+    keys.forEach(k => delete r[k]);
+    setRev(r);
+    if (isCloud) {
+      setSyncStatus("syncing");
+      try {
+        await Promise.all(keys.map(k => cloudDelete(user.uid, "revision", k)));
+        setSyncStatus("synced");
+      } catch { setSyncStatus("error"); }
+    } else { saveS(REV_KEY, r); }
+  };
+  const handleResetSet = async () => {
+    if (!resetKey) return;
+    await doResetProgress([resetKey]);
+    setResetKey(null);
+    showToast("🔄 Progress reset — set is now fresh");
+  };
+  const handleResetFolder = async (keys) => {
+    if (!resetFolderKey) return;
+    await doResetProgress(keys);
+    setResetFolderKey(null);
+    showToast(`🔄 Progress reset for ${keys.length} set${keys.length!==1?"s":""}`);
   };
 
   const handleRename = async (newTitle) => {
@@ -2001,6 +2308,8 @@ export default function App() {
       else if (qa?.skipped) topicStats[t].skipped++;
       else if (qa&&qa.selected!==null) topicStats[t].wrong++;
     });
+    const beforeRev = getRevData(activeKey);
+    prevRevSnapshotRef.current = { bk: new Set(beforeRev.bk), inc: new Set(beforeRev.inc), att: new Set(beforeRev.att) };
     saveRevData(activeKey, a, b);
     saveSession(a, tTotal, activeSet?.title||"Unknown", topicStats);
     const finalBk = getRevData(activeKey).bk;
@@ -2088,6 +2397,14 @@ export default function App() {
       if(!isAnswered(qs[p]?.id)) setTLeft(timerSec);
     }
   };
+  const doUndo = () => {
+    if (!revealed) return;
+    const qid = qs[cur]?.id;
+    setAns(p=>{ const n={...p}; delete n[qid]; return n; });
+    setAiChat(p=>{ const n={...p}; delete n[qid]; return n; }); // stale explanation was tied to the old selection
+    setRevealed(false);
+    setTLeft(timerOn?timerSec:0);
+  };
 
   const correct   = Object.values(ans).filter(a=>a.correct).length;
   const wrong     = Object.values(ans).filter(a=>!a.correct&&!a.skipped&&a.selected!==null).length;
@@ -2108,6 +2425,7 @@ export default function App() {
   // and inside an open Folder screen.
   const renderSetCard = ([key, set, d, gradeInfo]) => {
     const srsDue = getSrsDueCount(key);
+    const staleCount = getStaleCount(key);
     const topics = [...new Set((set.questions||[]).map(q=>q.topic||"General"))];
     const setSessions = (analytics?.sessions||[]).filter(s=>s.setTitle===set.title);
     const bestAcc = setSessions.length>0 ? Math.max(...setSessions.map(s=>(s.correct+s.wrong)>0?Math.round(s.correct/(s.correct+s.wrong)*100):0)) : null;
@@ -2120,13 +2438,20 @@ export default function App() {
               <div style={{minWidth:28,height:28,borderRadius:8,background:gradeInfo.bg,border:`1.5px solid ${gradeInfo.borderColor}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:900,color:gradeInfo.color,flexShrink:0,letterSpacing:"-0.5px"}}>
                 {gradeInfo.grade}
               </div>
-              <div style={{fontSize:15,fontWeight:700,color:"#f1f5f9",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{set.title}</div>
+              <div style={{fontSize:15,fontWeight:700,color:"#f1f5f9",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",flex:1,minWidth:0}}>{set.title}</div>
+              <button onClick={()=>setRenameKey(key)} title="Rename" style={{background:"none",border:"none",color:"#64748b",fontSize:13,cursor:"pointer",padding:2,flexShrink:0,lineHeight:1}}>✏️</button>
             </div>
             <div style={{color:"#64748b",fontSize:11,marginBottom:8,paddingLeft:36}}>
               {set.count} Qs · {new Date(set.savedAt).toLocaleDateString("en-IN",{day:"numeric",month:"short",year:"numeric"})}
               {bestAcc !== null && <span style={{color:"#a78bfa",marginLeft:8}}>· Best {bestAcc}%</span>}
-              {gradeInfo.grade !== "?" && <span style={{color:gradeInfo.color,marginLeft:8}}>· {gradeInfo.problemPct}% needs work</span>}
+              {gradeInfo.grade !== "?" && <span style={{color:gradeInfo.color,marginLeft:8}}>· {new Set([...d.bk,...d.inc]).size} of {d.att.size} attempted need review ({gradeInfo.problemPct}%)</span>}
             </div>
+            {staleCount>0 && (
+              <div style={{display:"flex",alignItems:"center",gap:8,background:"#1a1508",border:"1px solid #78530f",borderRadius:8,padding:"6px 10px",marginBottom:8,marginLeft:36}}>
+                <span style={{color:"#fbbf24",fontSize:10.5,flex:1}}>⚠️ {staleCount} question{staleCount!==1?"s":""} marked wrong/bookmarked but not counted as attempted — likely from a restored backup.</span>
+                <button onClick={async()=>{ const n=await fixStaleData([key]); showToast(`✅ Fixed ${n} question${n!==1?"s":""}`); }} style={{background:"#78530f",color:"#fef3c7",border:"none",borderRadius:6,padding:"4px 10px",fontSize:10.5,fontWeight:700,cursor:"pointer",fontFamily:"inherit",flexShrink:0}}>Fix</button>
+              </div>
+            )}
             <div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:6}}>
               {d.bk.size>0 && <span style={{background:"#a78bfa22",color:"#a78bfa",borderRadius:6,padding:"2px 8px",fontSize:10,fontWeight:700}}>🔖 {d.bk.size}</span>}
               {d.inc.size>0 && <span style={{background:"#f8717122",color:"#f87171",borderRadius:6,padding:"2px 8px",fontSize:10,fontWeight:700}}>❌ {d.inc.size}</span>}
@@ -2142,9 +2467,11 @@ export default function App() {
           </div>
           <div style={{display:"flex",flexDirection:"column",gap:5,flexShrink:0}}>
             <button onClick={()=>{setActiveSet(set);setActiveKey(key);setTopic("All Topics");setMode("full");setQCount("All");setScreen("home");}} style={{background:"linear-gradient(90deg,#0d9488,#2dd4bf)",color:"#0f172a",border:"none",borderRadius:8,padding:"8px 14px",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Practice →</button>
-            <button onClick={()=>setRenameKey(key)} style={{background:"#161b22",color:"#60a5fa",border:"none",borderRadius:8,padding:"5px 14px",fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>✏️ Rename</button>
             <button onClick={()=>setMoveSetKey(key)} style={{background:"#161b22",color:"#fbbf24",border:"none",borderRadius:8,padding:"5px 14px",fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>📁 Move</button>
             <button onClick={()=>setExportSet(set)} style={{background:"#161b22",color:"#2dd4bf",border:"1px solid #2dd4bf30",borderRadius:8,padding:"5px 14px",fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>⬇ Export</button>
+            {(d.bk.size>0 || d.inc.size>0 || d.att.size>0) && (
+              <button onClick={()=>setResetKey(key)} style={{background:"#161b22",color:"#fbbf24",border:"1px solid #fbbf2430",borderRadius:8,padding:"5px 14px",fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>🔄 Reset</button>
+            )}
             <button onClick={()=>setDelKey(key)} style={{background:"#161b22",color:"#f87171",border:"none",borderRadius:8,padding:"5px 14px",fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>🗑️ Delete</button>
           </div>
         </div>
@@ -2166,7 +2493,7 @@ export default function App() {
       <div style={{width:88,height:88,borderRadius:20,overflow:"hidden",boxShadow:"0 0 32px #2dd4bf40"}}>
         <img src="/icon-192.png" alt="HAQ PREP" width={88} height={88} style={{width:"100%",height:"100%",objectFit:"cover",display:"block"}}/>
       </div>
-      <div style={{color:"#f1f5f9",fontSize:16,fontWeight:700,letterSpacing:"0.3px"}}>HAQ PREP</div>
+      <div style={{fontFamily:"'Courier New',monospace",color:"#f1f5f9",fontSize:16,fontWeight:700,letterSpacing:"-0.3px"}}>haq<span style={{color:"#2dd4bf"}}>/</span>prep</div>
       <div style={{width:20,height:20,border:"2px solid #2dd4bf",borderTopColor:"transparent",borderRadius:"50%",animation:"spin 0.8s linear infinite"}}/>
       <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
     </div>
@@ -2189,8 +2516,27 @@ export default function App() {
 
   // ── Analytics ───────────────────────────────────────────────────────��────────
   if (screen === "analytics") return (
-    <AnalyticsScreen analytics={analytics||{}} lib={lib||{}} onBack={()=>setScreen("library")}
-      onReset={()=>{ const empty={sessions:[],totalAttempted:0,totalCorrect:0,totalWrong:0,totalSkipped:0}; persistAnalytics(empty); showToast("🗑 Analytics reset"); setScreen("library"); }}/>
+    <>
+      {revSheet.open && (
+        <div style={{position:"fixed",inset:0,background:"#000000cc",zIndex:300,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+          <div style={{background:"#161b22",borderRadius:16,padding:20,maxWidth:480,width:"100%",border:"1px solid #21262d",maxHeight:"85vh",display:"flex",flexDirection:"column"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+              <div style={{color:"#a78bfa",fontSize:14,fontWeight:700}}>📋 Your Revision Sheet</div>
+              <button onClick={()=>setRevSheet(p=>({...p,open:false}))} style={{background:"none",border:"none",color:"#64748b",fontSize:18,cursor:"pointer",lineHeight:1}}>✕</button>
+            </div>
+            {revSheet.loading && <div style={{color:"#a78bfa",fontSize:13,textAlign:"center",padding:32}}>✨ Generating your personalised revision sheet…</div>}
+            {revSheet.error && <div style={{color:"#fca5a5",fontSize:12,background:"#2d0a0a",borderRadius:10,padding:12}}>{revSheet.error}</div>}
+            {revSheet.text && (
+              <div style={{overflowY:"auto",flex:1}}>
+                <pre style={{color:"#e2e8f0",fontSize:12,lineHeight:1.8,whiteSpace:"pre-wrap",fontFamily:"'Segoe UI',sans-serif",margin:0}}>{revSheet.text}</pre>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+      <AnalyticsScreen analytics={analytics||{}} lib={lib||{}} rev={rev||{}} onRevisionSheet={()=>openRevSheet(analytics,rev,lib)} onBack={()=>setScreen("library")}
+        onReset={()=>{ const empty={sessions:[],totalAttempted:0,totalCorrect:0,totalWrong:0,totalSkipped:0}; persistAnalytics(empty); showToast("🗑 Analytics reset"); setScreen("library"); }}/>
+    </>
   );
 
   // ── Settings ───────────────────────────────────────────────────────────────
@@ -2218,12 +2564,42 @@ export default function App() {
     const GRADE_ORDER = { D:0, C:1, B:2, A:3, S:4, "?":5 };
     const gradedSets = unfiledSets.map(([key, set]) => {
       const d = getRevData(key);
-      const g = calcGrade(analytics?.sessions||[], set.title, d, set.questions?.length||set.count||0);
+      const g = calcGrade(d, set.questions?.length||set.count||0);
       return [key, set, d, g];
     });
     const sortedSets = focusSort
       ? [...gradedSets].sort((a,b) => (GRADE_ORDER[a[3].grade]??5) - (GRADE_ORDER[b[3].grade]??5))
       : gradedSets;
+
+    // Needs-Revision ranking — folder-wide and set-wide, using the SAME calcGrade
+    // formula as the per-card grade badges (attempted-only denominator, union of
+    // wrong+bookmarked, unattempted sets excluded rather than counted as "weak").
+    const allGradedForRanking = sets.map(([key,set]) => {
+      const d = getRevData(key);
+      const g = calcGrade(d, set.questions?.length||set.count||0);
+      return { key, set, d, g };
+    }).filter(x => x.g.grade !== "?");
+    const weakestSet = allGradedForRanking.length>0
+      ? allGradedForRanking.reduce((worst,cur)=>cur.g.problemPct>worst.g.problemPct?cur:worst)
+      : null;
+    const folderScores = folderList.map(([fkey,folder]) => {
+      let needCount=0, attCount=0;
+      sets.filter(([,s])=>s.folderId===fkey).forEach(([key]) => {
+        const d = getRevData(key);
+        if (d.att.size === 0) return; // not-started set — exclude entirely, don't let its
+                                        // wrong/bookmarked counts (which shouldn't exist if
+                                        // truly unattempted, but can from legacy/restored data)
+                                        // inflate the folder numerator without a matching
+                                        // denominator contribution
+        needCount += new Set([...d.bk,...d.inc]).size;
+        attCount += d.att.size;
+      });
+      return { fkey, folder, needCount, attCount, pct: attCount>0?Math.round(needCount/attCount*100):null };
+    }).filter(f=>f.pct!==null);
+    const weakestFolder = folderScores.length>0
+      ? folderScores.reduce((worst,cur)=>cur.pct>worst.pct?cur:worst)
+      : null;
+
     return (
       <div style={bg}>
         {showJson && <JsonModal onSave={handleSave} onClose={()=>setShowJson(false)} folders={folders}/>}
@@ -2231,6 +2607,7 @@ export default function App() {
         {moveSetKey && <MoveToFolderModal folders={folders} currentFolderId={(lib||{})[moveSetKey]?.folderId} onMove={(fid)=>handleMoveSet(moveSetKey, fid)} onClose={()=>setMoveSetKey(null)}/>}
         {shareSet && <ShareModal set={shareSet} onClose={()=>setShareSet(null)}/>}
         {exportSet && <ExportModal set={exportSet} onClose={()=>setExportSet(null)}/>}
+        {showHelp && <HelpModal onClose={()=>setShowHelp(false)}/>}
         {showBackup && <BackupModal lib={lib} rev={rev} analytics={analytics} srs={srs} folders={folders} isCloud={isCloud} user={user}
           onRestoreComplete={(merged)=>{
             // Data is already persisted (Firestore if cloud, localStorage if guest) inside doRestore.
@@ -2250,6 +2627,19 @@ export default function App() {
               <div style={{display:"flex",gap:10}}>
                 <button onClick={()=>setDelKey(null)} style={{flex:1,background:"#161b22",color:"#f1f5f9",border:"none",borderRadius:10,padding:12,fontSize:14,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>Cancel</button>
                 <button onClick={handleDel} style={{flex:1,background:"#f87171",color:"#0f172a",border:"none",borderRadius:10,padding:12,fontSize:14,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Delete</button>
+              </div>
+            </div>
+          </div>
+        )}
+        {resetKey && (
+          <div style={{position:"fixed",inset:0,background:"#000000bb",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+            <div style={{background:"#161b22",borderRadius:16,padding:24,maxWidth:320,width:"100%",border:"1px solid #21262d",textAlign:"center"}}>
+              <div style={{fontSize:32,marginBottom:8}}>🔄</div>
+              <div style={{color:"#f1f5f9",fontSize:16,fontWeight:700,marginBottom:8}}>Reset progress?</div>
+              <p style={{color:"#94a3b8",fontSize:13,marginBottom:20}}>Clears bookmarks, wrong answers, and "needs review" tracking for "{(lib||{})[resetKey]?.title}" — treats it as freshly unattempted. The set, its questions, and your score history stay untouched.</p>
+              <div style={{display:"flex",gap:10}}>
+                <button onClick={()=>setResetKey(null)} style={{flex:1,background:"#161b22",color:"#f1f5f9",border:"none",borderRadius:10,padding:12,fontSize:14,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>Cancel</button>
+                <button onClick={handleResetSet} style={{flex:1,background:"#fbbf24",color:"#0f172a",border:"none",borderRadius:10,padding:12,fontSize:14,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Reset</button>
               </div>
             </div>
           </div>
@@ -2292,7 +2682,7 @@ export default function App() {
                 <img src="/icon-192.png" alt="HAQ PREP logo" width={46} height={46} style={{width:"100%",height:"100%",objectFit:"cover"}}/>
               </div>
               <div style={{minWidth:0}}>
-                <div style={{fontSize:18,fontWeight:800,color:"#f1f5f9",letterSpacing:"-0.3px",whiteSpace:"nowrap"}}>HAQ PREP</div>
+                <div style={{fontFamily:"'Courier New',monospace",fontSize:18,fontWeight:800,color:"#f1f5f9",letterSpacing:"-0.3px",whiteSpace:"nowrap"}}>haq<span style={{color:"#2dd4bf"}}>/</span>prep</div>
                 <div style={{color:"#64748b",fontSize:11,marginTop:1}}>{sets.length} set{sets.length!==1?"s":""} in library</div>
               </div>
             </div>
@@ -2307,6 +2697,7 @@ export default function App() {
               <button onClick={()=>setScreen("settings")} style={{flex:1,background:"#0d1117",border:"1px solid #21262d",borderRadius:10,padding:"9px 10px",color:"#94a3b8",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>
                 <span style={{fontSize:15}}>⚙️</span><span>Settings</span>
               </button>
+              <button onClick={()=>setShowHelp(true)} aria-label="Help" style={{width:40,flexShrink:0,background:"#0d1117",border:"1px solid #21262d",borderRadius:10,padding:"9px 0",color:"#2dd4bf",fontSize:15,fontWeight:800,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",justifyContent:"center"}}>❓</button>
             </div>
           </div>
 
@@ -2327,6 +2718,42 @@ export default function App() {
                   <div style={{color:"#64748b",fontSize:10,marginTop:2}}>SRS review queue</div>
                 </div>
               </div>
+            </div>
+          )}
+
+          {(weakestFolder || weakestSet) && (
+            <div style={{background:"#161b22",borderRadius:14,padding:"14px 16px",marginBottom:16,border:"1px solid #7f1d1d"}}>
+              <div style={{color:"#fca5a5",fontSize:11,fontWeight:700,letterSpacing:1,marginBottom:10}}>🎯 NEEDS REVISION</div>
+              {weakestFolder && (
+                <div onClick={()=>{setActiveFolderKey(weakestFolder.fkey);setScreen("folder");}} role="button" tabIndex={0}
+                  onKeyDown={(e)=>{ if(e.key==="Enter"||e.key===" "){ e.preventDefault(); setActiveFolderKey(weakestFolder.fkey); setScreen("folder"); } }}
+                  style={{cursor:"pointer",marginBottom:weakestSet?12:0}}>
+                  <div style={{color:"#64748b",fontSize:10}}>WEAKEST FOLDER</div>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:8}}>
+                    <div style={{color:"#f1f5f9",fontSize:13,fontWeight:700,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",flex:1,minWidth:0}}>📁 {weakestFolder.folder.name}</div>
+                    <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",flexShrink:0}}>
+                      <div style={{color:"#f87171",fontSize:16,fontWeight:700}}>{weakestFolder.pct}%</div>
+                      <div style={{color:"#f8717199",fontSize:8.5,fontWeight:600,letterSpacing:0.3,whiteSpace:"nowrap"}}>NEED REVIEW</div>
+                    </div>
+                  </div>
+                  <div style={{color:"#fca5a5",fontSize:10.5,marginTop:1}}>{weakestFolder.needCount} of {weakestFolder.attCount} attempted need review</div>
+                </div>
+              )}
+              {weakestSet && (
+                <div onClick={()=>{setActiveSet(weakestSet.set);setActiveKey(weakestSet.key);setTopic("All Topics");setMode("full");setQCount("All");setScreen("home");}} role="button" tabIndex={0}
+                  onKeyDown={(e)=>{ if(e.key==="Enter"||e.key===" "){ e.preventDefault(); setActiveSet(weakestSet.set); setActiveKey(weakestSet.key); setTopic("All Topics"); setMode("full"); setQCount("All"); setScreen("home"); } }}
+                  style={{cursor:"pointer"}}>
+                  <div style={{color:"#64748b",fontSize:10}}>WEAKEST SET</div>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:8}}>
+                    <div style={{color:"#f1f5f9",fontSize:13,fontWeight:700,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",flex:1,minWidth:0}}>{weakestSet.set.title}</div>
+                    <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",flexShrink:0}}>
+                      <div style={{color:"#f87171",fontSize:16,fontWeight:700}}>{weakestSet.g.problemPct}%</div>
+                      <div style={{color:"#f8717199",fontSize:8.5,fontWeight:600,letterSpacing:0.3,whiteSpace:"nowrap"}}>NEED REVIEW</div>
+                    </div>
+                  </div>
+                  <div style={{color:"#fca5a5",fontSize:10.5,marginTop:1}}>{new Set([...weakestSet.d.bk,...weakestSet.d.inc]).size} of {weakestSet.d.att.size} attempted need review</div>
+                </div>
+              )}
             </div>
           )}
 
@@ -2400,7 +2827,21 @@ export default function App() {
             </div>
           )}
 
-          {sortedSets.map(renderSetCard)}
+          {(() => {
+            const gradedOnlySets = sortedSets.filter(([,,,g]) => g.grade !== "?");
+            const notStartedSets = sortedSets.filter(([,,,g]) => g.grade === "?");
+            return (
+              <>
+                {gradedOnlySets.map(renderSetCard)}
+                {notStartedSets.length > 0 && (
+                  <>
+                    <div style={{color:"#64748b",fontSize:11,fontWeight:700,marginTop:gradedOnlySets.length>0?16:0,marginBottom:8,paddingLeft:2,textTransform:"uppercase",letterSpacing:"0.5px"}}>○ Not Started</div>
+                    {notStartedSets.map(renderSetCard)}
+                  </>
+                )}
+              </>
+            );
+          })()}
         </div>
       </div>
     );
@@ -2415,12 +2856,17 @@ export default function App() {
     const GRADE_ORDER = { D:0, C:1, B:2, A:3, S:4, "?":5 };
     const gradedFolderSets = folderSetEntries.map(([key, set]) => {
       const d = getRevData(key);
-      const g = calcGrade(analytics?.sessions||[], set.title, d, set.questions?.length||set.count||0);
+      const g = calcGrade(d, set.questions?.length||set.count||0);
       return [key, set, d, g];
     });
     const sortedFolderSets = focusSort
       ? [...gradedFolderSets].sort((a,b) => (GRADE_ORDER[a[3].grade]??5) - (GRADE_ORDER[b[3].grade]??5))
       : gradedFolderSets;
+    let folderNeedCount=0, folderAttCount=0;
+    gradedFolderSets.forEach(([,,d,g]) => { if (g.grade==="?") return; folderNeedCount += new Set([...d.bk,...d.inc]).size; folderAttCount += d.att.size; });
+    const folderPct = folderAttCount>0 ? Math.round(folderNeedCount/folderAttCount*100) : null;
+    const staleFolderKeys = folderSetEntries.map(([key])=>key).filter(key=>getStaleCount(key)>0);
+    const staleFolderTotal = staleFolderKeys.reduce((t,key)=>t+getStaleCount(key),0);
     return (
       <div style={bg}>
         {showJson && <JsonModal onSave={handleSave} onClose={()=>setShowJson(false)} folders={folders} defaultFolderId={activeFolderKey}/>}
@@ -2455,6 +2901,32 @@ export default function App() {
             </div>
           </div>
         )}
+        {resetKey && (
+          <div style={{position:"fixed",inset:0,background:"#000000bb",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+            <div style={{background:"#161b22",borderRadius:16,padding:24,maxWidth:320,width:"100%",border:"1px solid #21262d",textAlign:"center"}}>
+              <div style={{fontSize:32,marginBottom:8}}>🔄</div>
+              <div style={{color:"#f1f5f9",fontSize:16,fontWeight:700,marginBottom:8}}>Reset progress?</div>
+              <p style={{color:"#94a3b8",fontSize:13,marginBottom:20}}>Clears bookmarks, wrong answers, and "needs review" tracking for "{(lib||{})[resetKey]?.title}" — treats it as freshly unattempted. The set, its questions, and your score history stay untouched.</p>
+              <div style={{display:"flex",gap:10}}>
+                <button onClick={()=>setResetKey(null)} style={{flex:1,background:"#161b22",color:"#f1f5f9",border:"none",borderRadius:10,padding:12,fontSize:14,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>Cancel</button>
+                <button onClick={handleResetSet} style={{flex:1,background:"#fbbf24",color:"#0f172a",border:"none",borderRadius:10,padding:12,fontSize:14,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Reset</button>
+              </div>
+            </div>
+          </div>
+        )}
+        {resetFolderKey && (
+          <div style={{position:"fixed",inset:0,background:"#000000bb",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+            <div style={{background:"#161b22",borderRadius:16,padding:24,maxWidth:340,width:"100%",border:"1px solid #21262d",textAlign:"center"}}>
+              <div style={{fontSize:32,marginBottom:8}}>🔄</div>
+              <div style={{color:"#f1f5f9",fontSize:16,fontWeight:700,marginBottom:8}}>Reset progress for "{folder.name}"?</div>
+              <p style={{color:"#94a3b8",fontSize:13,marginBottom:20}}>Clears bookmarks, wrong answers, and "needs review" tracking for all {folderSetEntries.length} set{folderSetEntries.length!==1?"s":""} in this folder. Sets, questions, and score history stay untouched.</p>
+              <div style={{display:"flex",gap:10}}>
+                <button onClick={()=>setResetFolderKey(null)} style={{flex:1,background:"#161b22",color:"#f1f5f9",border:"none",borderRadius:10,padding:12,fontSize:14,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>Cancel</button>
+                <button onClick={()=>handleResetFolder(folderSetEntries.map(([k])=>k))} style={{flex:1,background:"#fbbf24",color:"#0f172a",border:"none",borderRadius:10,padding:12,fontSize:14,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Reset All</button>
+              </div>
+            </div>
+          </div>
+        )}
         {toast && <div style={{position:"fixed",top:16,left:"50%",transform:"translateX(-50%)",background:"#0d2a1f",border:"1px solid #166534",borderRadius:10,padding:"10px 18px",color:"#4ade80",fontSize:13,zIndex:300,whiteSpace:"nowrap",boxShadow:"0 4px 20px #00000060"}}>{toast}</div>}
 
         <div style={{maxWidth:580,margin:"0 auto"}}>
@@ -2463,15 +2935,14 @@ export default function App() {
               <div style={{width:20,height:20,borderRadius:6,background:"#161b22",display:"flex",alignItems:"center",justifyContent:"center",color:"#64748b",fontSize:14,lineHeight:1}}>‹</div>
               <span style={{color:"#64748b",fontSize:12,fontWeight:600}}>Library</span>
             </button>
-            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10}}>
-              <div style={{display:"flex",alignItems:"center",gap:10,minWidth:0}}>
-                <span style={{fontSize:26}}>📁</span>
-                <div style={{minWidth:0}}>
-                  <div style={{fontSize:18,fontWeight:800,color:"#f1f5f9",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{folder.name}</div>
-                  <div style={{color:"#64748b",fontSize:11,marginTop:1}}>{folderSetEntries.length} set{folderSetEntries.length!==1?"s":""}</div>
-                </div>
+            <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14}}>
+              <span style={{fontSize:26,flexShrink:0}}>📁</span>
+              <div style={{minWidth:0}}>
+                <div style={{fontSize:18,fontWeight:800,color:"#f1f5f9",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{folder.name}</div>
+                <div style={{color:"#64748b",fontSize:11,marginTop:1}}>{folderSetEntries.length} set{folderSetEntries.length!==1?"s":""}{folderPct!==null && <span style={{color:folderPct>=50?"#f87171":folderPct>=25?"#fbbf24":"#4ade80"}}> · {folderNeedCount} of {folderAttCount} attempted need review ({folderPct}%)</span>}</div>
               </div>
-              <div style={{display:"flex",gap:6,flexShrink:0}}>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:6}}>
                 <button onClick={()=>{
                   const folderKeys = folderSetEntries.map(([key])=>key);
                   const filteredLib = Object.fromEntries(folderKeys.map(k=>[k,(lib||{})[k]]));
@@ -2483,12 +2954,23 @@ export default function App() {
                   const safeName = (folder.name||"folder").replace(/[^a-z0-9]+/gi,"-").toLowerCase();
                   const a = document.createElement("a"); a.href=url; a.download=`haqprep-${safeName}-${new Date().toISOString().slice(0,10)}.json`;
                   document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
-                }} style={{background:"#0d1117",color:"#2dd4bf",border:"1px solid #2dd4bf30",borderRadius:8,padding:"7px 10px",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>⬇ Export</button>
-                <button onClick={()=>setRenameFolderKey(activeFolderKey)} style={{background:"#0d1117",color:"#60a5fa",border:"1px solid #21262d",borderRadius:8,padding:"7px 10px",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>✏️ Rename</button>
-                <button onClick={()=>setDelFolderKey(activeFolderKey)} style={{background:"#0d1117",color:"#f87171",border:"1px solid #21262d",borderRadius:8,padding:"7px 10px",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>🗑️ Delete</button>
-              </div>
+                }} style={{background:"#0d1117",color:"#2dd4bf",border:"1px solid #2dd4bf30",borderRadius:8,padding:"8px 4px",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>⬇ Export</button>
+                <button onClick={()=>setRenameFolderKey(activeFolderKey)} style={{background:"#0d1117",color:"#60a5fa",border:"1px solid #21262d",borderRadius:8,padding:"8px 4px",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>✏️ Rename</button>
+                <button onClick={()=>setResetFolderKey(activeFolderKey)} style={{background:"#0d1117",color:"#fbbf24",border:"1px solid #21262d",borderRadius:8,padding:"8px 4px",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>🔄 Reset</button>
+                <button onClick={()=>setDelFolderKey(activeFolderKey)} style={{background:"#0d1117",color:"#f87171",border:"1px solid #21262d",borderRadius:8,padding:"8px 4px",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>🗑️ Delete</button>
             </div>
           </div>
+
+          {staleFolderKeys.length>0 && (
+            <div style={{display:"flex",alignItems:"center",gap:10,background:"#1a1508",border:"1px solid #78530f",borderRadius:12,padding:"12px 14px",marginBottom:16}}>
+              <span style={{fontSize:18,flexShrink:0}}>⚠️</span>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{color:"#fbbf24",fontSize:12,fontWeight:700,marginBottom:2}}>{staleFolderKeys.length} set{staleFolderKeys.length!==1?"s":""} in this folder have stale data</div>
+                <div style={{color:"#94a3b8",fontSize:11,lineHeight:1.5}}>{staleFolderTotal} question{staleFolderTotal!==1?"s":""} marked wrong/bookmarked but not counted as attempted — likely from a restored backup. Fixing recovers consistency without deleting any wrong/bookmark flags.</div>
+              </div>
+              <button onClick={async()=>{ const n=await fixStaleData(staleFolderKeys); showToast(`✅ Fixed ${n} question${n!==1?"s":""} across ${staleFolderKeys.length} set${staleFolderKeys.length!==1?"s":""}`); }} style={{background:"#78530f",color:"#fef3c7",border:"none",borderRadius:8,padding:"8px 14px",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit",flexShrink:0}}>Fix All</button>
+            </div>
+          )}
 
           <div style={{display:"flex",gap:8,marginBottom:16}}>
             <button onClick={()=>setShowJson(true)} style={{flex:1,background:"linear-gradient(90deg,#0d9488,#2dd4bf)",color:"#0f172a",border:"none",borderRadius:10,padding:"11px 14px",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>+ Import JSON into this folder</button>
@@ -2511,7 +2993,21 @@ export default function App() {
             </div>
           )}
 
-          {sortedFolderSets.map(renderSetCard)}
+          {(() => {
+            const gradedOnlyFolderSets = sortedFolderSets.filter(([,,,g]) => g.grade !== "?");
+            const notStartedFolderSets = sortedFolderSets.filter(([,,,g]) => g.grade === "?");
+            return (
+              <>
+                {gradedOnlyFolderSets.map(renderSetCard)}
+                {notStartedFolderSets.length > 0 && (
+                  <>
+                    <div style={{color:"#64748b",fontSize:11,fontWeight:700,marginTop:gradedOnlyFolderSets.length>0?16:0,marginBottom:8,paddingLeft:2,textTransform:"uppercase",letterSpacing:"0.5px"}}>○ Not Started</div>
+                    {notStartedFolderSets.map(renderSetCard)}
+                  </>
+                )}
+              </>
+            );
+          })()}
         </div>
       </div>
     );
@@ -2608,11 +3104,13 @@ export default function App() {
     const pct = maxMarks>0?Math.round(marks/maxMarks*100):0;
     const grade = pct>=80?"Excellent 🏆":pct>=60?"Good 👍":pct>=40?"Needs Work 📖":"Keep Revising 💪";
     const upd = getRevData(activeKey);
-    // Grade before this session (using sessions excluding the last one)
-    const allSessions = analytics?.sessions||[];
-    const prevSessions = allSessions.slice(0, -1); // all except the just-saved session
-    const prevGradeInfo = calcGrade(prevSessions, activeSet?.title||"", upd, activeSet?.questions?.length||0);
-    const newGradeInfo  = calcGrade(allSessions,  activeSet?.title||"", upd, activeSet?.questions?.length||0);
+    // Grade before this session — a real snapshot taken right before this session's
+    // results were merged in finish(), not reconstructed (revData merges are cumulative
+    // unions, so subtracting this session's answers from the after-state wouldn't be
+    // accurate if a question was already attempted/wrong in an earlier session too).
+    const before = prevRevSnapshotRef.current || upd;
+    const prevGradeInfo = calcGrade(before, activeSet?.questions?.length||0);
+    const newGradeInfo  = calcGrade(upd,     activeSet?.questions?.length||0);
     const gradeChanged  = prevGradeInfo.grade !== newGradeInfo.grade;
     const topicStats = {};
     qs.forEach(q => {
@@ -2860,7 +3358,92 @@ export default function App() {
             <div style={{color:qa?.correct?"#4ade80":"#fca5a5",fontSize:10,fontWeight:700,marginBottom:5}}>
               {qa?.skipped?"⏭ SKIPPED — ":qa?.correct?"✓ CORRECT — ":"✗ INCORRECT — "}💡 EXPLANATION
             </div>
-            <p style={{color:qa?.correct?"#86efac":"#fca5a5",fontSize:12,lineHeight:1.6,margin:0}}>{q.explanation||"No explanation provided."}</p>
+            <p style={{color:qa?.correct?"#86efac":"#fca5a5",fontSize:12,lineHeight:1.6,margin:"0 0 10px"}}>{q.explanation||"No explanation provided."}</p>
+            <button onClick={doUndo} style={{background:"none",border:"1px solid #64748b55",color:"#94a3b8",borderRadius:8,padding:"6px 12px",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit",marginBottom:8}}>
+              ↺ Change answer
+            </button>
+            {/* ── AI Doubt Chat ─────────────────────────────────────────── */}
+            {(() => {
+              const c = aiChat[q.id] || {};
+              return (
+                <>
+                  {c.explainText && (
+                    <div style={{background:"#0d1a2e",borderRadius:8,padding:10,marginBottom:8,border:"1px solid #1e3a5f"}}>
+                      <div style={{color:"#60a5fa",fontSize:10,fontWeight:700,marginBottom:4}}>🤖 AI DEEPER EXPLANATION</div>
+                      <p style={{color:"#93c5fd",fontSize:12,lineHeight:1.6,margin:0}}>{c.explainText}</p>
+                    </div>
+                  )}
+                  {(!c.explainText || !c.chatOpen) && (
+                    <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                      {!c.explainText && (
+                        <button onClick={()=>aiExplainFor(q,qa)} disabled={c.explainLoading} style={{background:"linear-gradient(135deg,#1e3a5f22,#1a0f2e22)",border:"1px solid #3b82f655",borderRadius:99,padding:"7px 14px 7px 10px",fontSize:11,fontWeight:700,color:"#93c5fd",display:"flex",alignItems:"center",gap:6,cursor:c.explainLoading?"wait":"pointer",fontFamily:"inherit"}}>
+                          <SparkIcon size={13}/> {c.explainLoading?"Thinking…":"Explain with AI"}
+                        </button>
+                      )}
+                      {!c.chatOpen && (
+                        <button onClick={()=>aiChatUpdate(q.id,{chatOpen:true})} style={{background:"linear-gradient(135deg,#2e106522,#1a0f2e22)",border:"1px solid #a78bfa55",borderRadius:99,padding:"7px 14px 7px 10px",fontSize:11,fontWeight:700,color:"#c4b5fd",display:"flex",alignItems:"center",gap:6,cursor:"pointer",fontFamily:"inherit"}}>
+                          <SparkIcon size={13}/> {c.explainText ? "Ask AI a follow-up" : "Ask AI a doubt"}
+                        </button>
+                      )}
+                      {qa && !qa.correct && !qa.skipped && !c.similarQ && (
+                        <button onClick={()=>aiSimilarFor(q)} disabled={c.similarLoading} style={{background:"linear-gradient(135deg,#7c2d1222,#1a0f2e22)",border:"1px solid #fb923c55",borderRadius:99,padding:"7px 14px 7px 10px",fontSize:11,fontWeight:700,color:"#fdba74",display:"flex",alignItems:"center",gap:6,cursor:c.similarLoading?"wait":"pointer",fontFamily:"inherit"}}>
+                          <SparkIcon size={13}/> {c.similarLoading?"Generating…":"🔁 Try a Similar Question"}
+                        </button>
+                      )}
+                    </div>
+                  )}
+                  {c.similarError && <div style={{color:"#fca5a5",fontSize:11,marginTop:4}}>⚠️ {c.similarError}</div>}
+                  {c.similarQ && (
+                    <div style={{marginTop:10,background:"#1a0f05",border:"1px solid #fb923c40",borderRadius:10,padding:12}}>
+                      <div style={{color:"#fdba74",fontSize:10,fontWeight:700,marginBottom:8,display:"flex",alignItems:"center",gap:5}}><SparkIcon size={12}/> SIMILAR QUESTION — TRY IT</div>
+                      <p style={{color:"#f1f5f9",fontSize:12,lineHeight:1.6,marginBottom:10}}>{c.similarQ.q}</p>
+                      <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:c.similarRevealed?10:0}}>
+                        {c.similarQ.options.map((opt,i) => {
+                          const isCorrect = i===c.similarQ.answer;
+                          const isPicked = i===c.similarSelected;
+                          let bg="#0d1117", border="#21262d", color="#cbd5e1";
+                          if (c.similarRevealed) {
+                            if (isCorrect) { bg="#0f2922"; border="#166534"; color="#4ade80"; }
+                            else if (isPicked) { bg="#2d0a0a"; border="#7f1d1d"; color="#f87171"; }
+                          }
+                          return (
+                            <button key={i} onClick={()=>!c.similarRevealed && aiSimilarSelect(q,i)} disabled={c.similarRevealed} style={{textAlign:"left",background:bg,border:`1px solid ${border}`,borderRadius:8,padding:"8px 10px",color,fontSize:12,cursor:c.similarRevealed?"default":"pointer",fontFamily:"inherit"}}>
+                              {String.fromCharCode(65+i)}. {opt}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      {c.similarRevealed && (
+                        <>
+                          <p style={{color:"#94a3b8",fontSize:11,lineHeight:1.6,margin:"0 0 8px"}}>{c.similarQ.explanation}</p>
+                          <button onClick={()=>aiSimilarFor(q)} disabled={c.similarLoading} style={{background:"none",border:"1px solid #fb923c55",color:"#fdba74",borderRadius:8,padding:"6px 12px",fontSize:11,fontWeight:700,cursor:c.similarLoading?"wait":"pointer",fontFamily:"inherit"}}>{c.similarLoading?"Generating…":"🔁 Another one"}</button>
+                        </>
+                      )}
+                    </div>
+                  )}
+                  {c.explainError && <div style={{color:"#fca5a5",fontSize:11,marginTop:4}}>⚠️ {c.explainError}</div>}
+                  {c.chatOpen && (
+                    <div style={{marginTop:8,background:"#0d1117",borderRadius:10,padding:10,border:"1px solid #1e293b"}}>
+                      <div style={{color:"#a78bfa",fontSize:10,fontWeight:700,marginBottom:8}}>💬 DOUBT CHAT</div>
+                      {(c.msgs||[]).map((m,i)=>(
+                        <div key={i} style={{marginBottom:8,display:"flex",flexDirection:"column",alignItems:m.role==="user"?"flex-end":"flex-start"}}>
+                          <div style={{maxWidth:"88%",background:m.role==="user"?"#1e3a5f":"#1a0f2e",color:m.role==="user"?"#93c5fd":"#c4b5fd",borderRadius:8,padding:"7px 10px",fontSize:12,lineHeight:1.5}}>
+                            {m.role==="ai" && <span style={{fontSize:10,fontWeight:700,display:"block",marginBottom:3,color:"#a78bfa"}}>🤖 AI</span>}
+                            {m.text}
+                          </div>
+                        </div>
+                      ))}
+                      {c.chatLoading && <div style={{color:"#a78bfa",fontSize:11,marginBottom:6}}>🤖 Thinking…</div>}
+                      {c.chatError && <div style={{color:"#fca5a5",fontSize:11,marginBottom:6}}>⚠️ {c.chatError}</div>}
+                      <div style={{display:"flex",gap:6,marginTop:4}}>
+                        <input value={c.input||""} onChange={e=>aiChatUpdate(q.id,{input:e.target.value})} onKeyDown={e=>{if(e.key==="Enter"&&(c.input||"").trim()&&!c.chatLoading)aiDoubtSend(q,(c.input||"").trim());}} placeholder="Type your doubt… (Enter to send)" style={{flex:1,background:"#161b22",border:"1px solid #21262d",borderRadius:8,padding:"7px 10px",color:"#f1f5f9",fontSize:12,fontFamily:"inherit",outline:"none"}}/>
+                        <button onClick={()=>{if((c.input||"").trim()&&!c.chatLoading)aiDoubtSend(q,(c.input||"").trim());}} disabled={!(c.input||"").trim()||c.chatLoading} style={{background:"#7c3aed",color:"#fff",border:"none",borderRadius:8,padding:"7px 12px",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Send</button>
+                      </div>
+                    </div>
+                  )}
+                </>
+              );
+            })()}
           </div>
         )}
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:7,marginBottom:12}}>
