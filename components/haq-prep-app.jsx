@@ -811,6 +811,71 @@ function ReviewCard({ q, a }) {
 }
 
 // ── Export Modal ──────────────────────────────────────────────────────────────
+// ── Help / Feature Guide Modal ──────────────────────────────────────────────
+function HelpModal({ onClose }) {
+  const [openId, setOpenId] = useState(null);
+  const sections = [
+    { id:"import", icon:"📥", title:"Importing Sets",
+      body:["Generate MCQs with any AI (Claude, ChatGPT, etc.) from your notes/PDF as JSON.",
+            "Tap + Import JSON → paste the JSON or upload a .json file directly.",
+            "Give it a name, pick a folder (optional), and save."] },
+    { id:"export", icon:"⬇",  title:"Exporting Sets",
+      body:["Single set: open a set's card → Export → Copy JSON or Download as a file.",
+            "Whole folder: open the folder → Export → downloads every set in it as one file.",
+            "Full library: Settings → Library Backup → Export → downloads everything (sets, folders, bookmarks, SRS progress)."] },
+    { id:"restore", icon:"🗄️", title:"Backup & Restore",
+      body:["Settings → Library Backup → Restore → pick a backup .json file.",
+            "Restoring merges into your current library — nothing existing gets deleted. If a set shares an ID with one already in your library, that set's data is overwritten; everything else stays untouched.",
+            "Signed-in restores sync to your account, so they're there after logging out and back in on any device."] },
+    { id:"folders", icon:"📁", title:"Folders",
+      body:["+ New Folder to create one, then Move a set into it from its card menu.",
+            "Rename or Delete a folder from its own screen (deleting a folder doesn't delete its sets — they move back to Unfiled)."] },
+    { id:"practice", icon:"🎯", title:"Practice Modes",
+      body:["Full Set — every question, with an optional topic filter and question-count limit.",
+            "Bookmarked — only questions you've flagged 🔖 during past attempts.",
+            "Incorrect — only questions you've gotten wrong before.",
+            "SRS Review — questions due today based on spaced repetition.",
+            "Skip a question to come back to it later — it won't reveal the answer, and you can attempt skipped questions in another round before submitting."] },
+    { id:"scoring", icon:"⏱️", title:"Scoring & Timer",
+      body:["+4 for a correct answer, −1 for a wrong one — real CBT-style marking.",
+            "A 90-second per-question timer is on by default; toggle it off anytime before starting."] },
+    { id:"srs", icon:"🔁", title:"Bookmarks & Spaced Repetition",
+      body:["Bookmark any question mid-quiz to flag it for later.",
+            "Answered questions get automatically scheduled for review — correct answers push the next review further out, wrong or skipped ones bring it back sooner."] },
+    { id:"analytics", icon:"📊", title:"Analytics",
+      body:["Tracks every session's score, accuracy, and time per set.",
+            "Each set gets a grade (S/A/B/C/D) based on your recent performance, visible right on its card."] },
+  ];
+  return (
+    <div style={{position:"fixed",inset:0,background:"#000000bb",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+      <div style={{background:"#161b22",borderRadius:20,padding:24,width:"100%",maxWidth:520,border:"1px solid #21262d",maxHeight:"88vh",overflowY:"auto"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+          <h2 style={{color:"#f1f5f9",fontSize:18,margin:0}}>❓ Help & Features</h2>
+          <button onClick={onClose} style={{background:"#0d1117",color:"#94a3b8",border:"none",borderRadius:8,padding:"6px 12px",fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>✕</button>
+        </div>
+        <div style={{color:"#64748b",fontSize:11,marginBottom:16}}>Tap a topic to expand it.</div>
+        {sections.map(s => {
+          const open = openId===s.id;
+          return (
+            <div key={s.id} style={{background:"#0d1117",borderRadius:12,border:"1px solid #21262d",padding:"12px 14px",marginBottom:8}}>
+              <button onClick={()=>setOpenId(open?null:s.id)} style={{width:"100%",display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,background:"none",border:"none",padding:0,cursor:"pointer",fontFamily:"inherit"}}>
+                <span style={{display:"flex",alignItems:"center",gap:8,color:"#f1f5f9",fontSize:13,fontWeight:700}}><span style={{fontSize:15}}>{s.icon}</span>{s.title}</span>
+                <span style={{color:"#2dd4bf",fontSize:9}}>{open?"▲":"▼"}</span>
+              </button>
+              {open && (
+                <ul style={{margin:"10px 0 0",paddingLeft:18,color:"#94a3b8",fontSize:12,lineHeight:1.7}}>
+                  {s.body.map((line,i)=>(<li key={i} style={{marginBottom:4}}>{line}</li>))}
+                </ul>
+              )}
+            </div>
+          );
+        })}
+        <button onClick={onClose} style={{width:"100%",background:"linear-gradient(90deg,#0d9488,#2dd4bf)",color:"#0f172a",border:"none",borderRadius:10,padding:12,fontSize:14,fontWeight:700,cursor:"pointer",fontFamily:"inherit",marginTop:4}}>Got it</button>
+      </div>
+    </div>
+  );
+}
+
 function ExportModal({ set, onClose }) {
   const [copied, setCopied] = useState(false);
   const json = JSON.stringify({ title: set.title, questions: set.questions }, null, 2);
@@ -1422,6 +1487,7 @@ export default function App() {
   const [exportSet, setExportSet]     = useState(null);
   const [pendingImport, setPendingImport] = useState(null); // set decoded from a #import= share link
   const [showBackup, setShowBackup]   = useState(false);
+  const [showHelp, setShowHelp]       = useState(false);
   const [usageDismissedAt, setUsageDismissedAt] = useState(() => {
     try { return parseInt(localStorage.getItem("haq_usage_dismissed")||"0",10); } catch { return 0; }
   });
@@ -2231,6 +2297,7 @@ export default function App() {
         {moveSetKey && <MoveToFolderModal folders={folders} currentFolderId={(lib||{})[moveSetKey]?.folderId} onMove={(fid)=>handleMoveSet(moveSetKey, fid)} onClose={()=>setMoveSetKey(null)}/>}
         {shareSet && <ShareModal set={shareSet} onClose={()=>setShareSet(null)}/>}
         {exportSet && <ExportModal set={exportSet} onClose={()=>setExportSet(null)}/>}
+        {showHelp && <HelpModal onClose={()=>setShowHelp(false)}/>}
         {showBackup && <BackupModal lib={lib} rev={rev} analytics={analytics} srs={srs} folders={folders} isCloud={isCloud} user={user}
           onRestoreComplete={(merged)=>{
             // Data is already persisted (Firestore if cloud, localStorage if guest) inside doRestore.
@@ -2307,6 +2374,7 @@ export default function App() {
               <button onClick={()=>setScreen("settings")} style={{flex:1,background:"#0d1117",border:"1px solid #21262d",borderRadius:10,padding:"9px 10px",color:"#94a3b8",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>
                 <span style={{fontSize:15}}>⚙️</span><span>Settings</span>
               </button>
+              <button onClick={()=>setShowHelp(true)} aria-label="Help" style={{width:40,flexShrink:0,background:"#0d1117",border:"1px solid #21262d",borderRadius:10,padding:"9px 0",color:"#2dd4bf",fontSize:15,fontWeight:800,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",justifyContent:"center"}}>❓</button>
             </div>
           </div>
 
