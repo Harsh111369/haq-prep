@@ -1953,6 +1953,38 @@ export default function App() {
     return { bk: new Set(d.bookmarked||[]), inc: new Set(d.incorrect||[]), att: new Set(d.attempted||[]) };
   }, [rev]);
 
+  // A question marked wrong/bookmarked but missing from attempted is stale data
+  // (typically from an older backup/schema where 'attempted' wasn't tracked the
+  // same way). Returns how many such questions a set has.
+  const getStaleCount = useCallback(key => {
+    const d = getRevData(key);
+    let n = 0;
+    for (const id of d.bk) if (!d.att.has(id)) n++;
+    for (const id of d.inc) if (!d.att.has(id)) n++;
+    return n;
+  }, [getRevData]);
+
+  // Fix: add any bookmarked/incorrect id missing from attempted INTO attempted.
+  // Being marked wrong/bookmarked is proof the question was attempted at some
+  // point, so this recovers consistency without deleting the wrong/bookmark
+  // flag itself or inventing new information.
+  const fixStaleData = useCallback(async (keys) => {
+    const r = { ...(rev||{}) };
+    let fixedCount = 0;
+    keys.forEach(key => {
+      const d = r[key];
+      if (!d) return;
+      const att = new Set(d.attempted||[]);
+      const before = att.size;
+      (d.bookmarked||[]).forEach(id=>att.add(id));
+      (d.incorrect||[]).forEach(id=>att.add(id));
+      fixedCount += att.size - before;
+      r[key] = { ...d, attempted: [...att] };
+    });
+    await persistRev(r);
+    return fixedCount;
+  }, [rev, persistRev]);
+
   const getSrsData = useCallback(key => (srs||{})[key] || {}, [srs]);
 
   const getSrsDueCount = useCallback(key => {
@@ -2278,6 +2310,7 @@ export default function App() {
   // and inside an open Folder screen.
   const renderSetCard = ([key, set, d, gradeInfo]) => {
     const srsDue = getSrsDueCount(key);
+    const staleCount = getStaleCount(key);
     const topics = [...new Set((set.questions||[]).map(q=>q.topic||"General"))];
     const setSessions = (analytics?.sessions||[]).filter(s=>s.setTitle===set.title);
     const bestAcc = setSessions.length>0 ? Math.max(...setSessions.map(s=>(s.correct+s.wrong)>0?Math.round(s.correct/(s.correct+s.wrong)*100):0)) : null;
@@ -2298,6 +2331,12 @@ export default function App() {
               {bestAcc !== null && <span style={{color:"#a78bfa",marginLeft:8}}>· Best {bestAcc}%</span>}
               {gradeInfo.grade !== "?" && <span style={{color:gradeInfo.color,marginLeft:8}}>· {new Set([...d.bk,...d.inc]).size} of {d.att.size} attempted need review ({gradeInfo.problemPct}%)</span>}
             </div>
+            {staleCount>0 && (
+              <div style={{display:"flex",alignItems:"center",gap:8,background:"#1a1508",border:"1px solid #78530f",borderRadius:8,padding:"6px 10px",marginBottom:8,marginLeft:36}}>
+                <span style={{color:"#fbbf24",fontSize:10.5,flex:1}}>⚠️ {staleCount} question{staleCount!==1?"s":""} marked wrong/bookmarked but not counted as attempted — likely from a restored backup.</span>
+                <button onClick={async()=>{ const n=await fixStaleData([key]); showToast(`✅ Fixed ${n} question${n!==1?"s":""}`); }} style={{background:"#78530f",color:"#fef3c7",border:"none",borderRadius:6,padding:"4px 10px",fontSize:10.5,fontWeight:700,cursor:"pointer",fontFamily:"inherit",flexShrink:0}}>Fix</button>
+              </div>
+            )}
             <div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:6}}>
               {d.bk.size>0 && <span style={{background:"#a78bfa22",color:"#a78bfa",borderRadius:6,padding:"2px 8px",fontSize:10,fontWeight:700}}>🔖 {d.bk.size}</span>}
               {d.inc.size>0 && <span style={{background:"#f8717122",color:"#f87171",borderRadius:6,padding:"2px 8px",fontSize:10,fontWeight:700}}>❌ {d.inc.size}</span>}
@@ -2687,6 +2726,8 @@ export default function App() {
     let folderNeedCount=0, folderAttCount=0;
     gradedFolderSets.forEach(([,,d,g]) => { if (g.grade==="?") return; folderNeedCount += new Set([...d.bk,...d.inc]).size; folderAttCount += d.att.size; });
     const folderPct = folderAttCount>0 ? Math.round(folderNeedCount/folderAttCount*100) : null;
+    const staleFolderKeys = folderSetEntries.map(([key])=>key).filter(key=>getStaleCount(key)>0);
+    const staleFolderTotal = staleFolderKeys.reduce((t,key)=>t+getStaleCount(key),0);
     return (
       <div style={bg}>
         {showJson && <JsonModal onSave={handleSave} onClose={()=>setShowJson(false)} folders={folders} defaultFolderId={activeFolderKey}/>}
@@ -2755,6 +2796,17 @@ export default function App() {
               </div>
             </div>
           </div>
+
+          {staleFolderKeys.length>0 && (
+            <div style={{display:"flex",alignItems:"center",gap:10,background:"#1a1508",border:"1px solid #78530f",borderRadius:12,padding:"12px 14px",marginBottom:16}}>
+              <span style={{fontSize:18,flexShrink:0}}>⚠️</span>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{color:"#fbbf24",fontSize:12,fontWeight:700,marginBottom:2}}>{staleFolderKeys.length} set{staleFolderKeys.length!==1?"s":""} in this folder have stale data</div>
+                <div style={{color:"#94a3b8",fontSize:11,lineHeight:1.5}}>{staleFolderTotal} question{staleFolderTotal!==1?"s":""} marked wrong/bookmarked but not counted as attempted — likely from a restored backup. Fixing recovers consistency without deleting any wrong/bookmark flags.</div>
+              </div>
+              <button onClick={async()=>{ const n=await fixStaleData(staleFolderKeys); showToast(`✅ Fixed ${n} question${n!==1?"s":""} across ${staleFolderKeys.length} set${staleFolderKeys.length!==1?"s":""}`); }} style={{background:"#78530f",color:"#fef3c7",border:"none",borderRadius:8,padding:"8px 14px",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit",flexShrink:0}}>Fix All</button>
+            </div>
+          )}
 
           <div style={{display:"flex",gap:8,marginBottom:16}}>
             <button onClick={()=>setShowJson(true)} style={{flex:1,background:"linear-gradient(90deg,#0d9488,#2dd4bf)",color:"#0f172a",border:"none",borderRadius:10,padding:"11px 14px",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>+ Import JSON into this folder</button>
