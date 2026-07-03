@@ -2929,15 +2929,14 @@ export default function App() {
               <div style={{width:20,height:20,borderRadius:6,background:"#161b22",display:"flex",alignItems:"center",justifyContent:"center",color:"#64748b",fontSize:14,lineHeight:1}}>‹</div>
               <span style={{color:"#64748b",fontSize:12,fontWeight:600}}>Library</span>
             </button>
-            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10}}>
-              <div style={{display:"flex",alignItems:"center",gap:10,minWidth:0}}>
-                <span style={{fontSize:26}}>📁</span>
-                <div style={{minWidth:0}}>
-                  <div style={{fontSize:18,fontWeight:800,color:"#f1f5f9",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{folder.name}</div>
-                  <div style={{color:"#64748b",fontSize:11,marginTop:1}}>{folderSetEntries.length} set{folderSetEntries.length!==1?"s":""}{folderPct!==null && <span style={{color:folderPct>=50?"#f87171":folderPct>=25?"#fbbf24":"#4ade80"}}> · {folderNeedCount} of {folderAttCount} attempted need review ({folderPct}%)</span>}</div>
-                </div>
+            <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14}}>
+              <span style={{fontSize:26,flexShrink:0}}>📁</span>
+              <div style={{minWidth:0}}>
+                <div style={{fontSize:18,fontWeight:800,color:"#f1f5f9",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{folder.name}</div>
+                <div style={{color:"#64748b",fontSize:11,marginTop:1}}>{folderSetEntries.length} set{folderSetEntries.length!==1?"s":""}{folderPct!==null && <span style={{color:folderPct>=50?"#f87171":folderPct>=25?"#fbbf24":"#4ade80"}}> · {folderNeedCount} of {folderAttCount} attempted need review ({folderPct}%)</span>}</div>
               </div>
-              <div style={{display:"flex",gap:6,flexShrink:0}}>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:6}}>
                 <button onClick={()=>{
                   const folderKeys = folderSetEntries.map(([key])=>key);
                   const filteredLib = Object.fromEntries(folderKeys.map(k=>[k,(lib||{})[k]]));
@@ -2949,11 +2948,10 @@ export default function App() {
                   const safeName = (folder.name||"folder").replace(/[^a-z0-9]+/gi,"-").toLowerCase();
                   const a = document.createElement("a"); a.href=url; a.download=`haqprep-${safeName}-${new Date().toISOString().slice(0,10)}.json`;
                   document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
-                }} style={{background:"#0d1117",color:"#2dd4bf",border:"1px solid #2dd4bf30",borderRadius:8,padding:"7px 10px",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>⬇ Export</button>
-                <button onClick={()=>setRenameFolderKey(activeFolderKey)} style={{background:"#0d1117",color:"#60a5fa",border:"1px solid #21262d",borderRadius:8,padding:"7px 10px",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>✏️ Rename</button>
-                <button onClick={()=>setResetFolderKey(activeFolderKey)} style={{background:"#0d1117",color:"#fbbf24",border:"1px solid #21262d",borderRadius:8,padding:"7px 10px",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>🔄 Reset</button>
-                <button onClick={()=>setDelFolderKey(activeFolderKey)} style={{background:"#0d1117",color:"#f87171",border:"1px solid #21262d",borderRadius:8,padding:"7px 10px",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>🗑️ Delete</button>
-              </div>
+                }} style={{background:"#0d1117",color:"#2dd4bf",border:"1px solid #2dd4bf30",borderRadius:8,padding:"8px 4px",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>⬇ Export</button>
+                <button onClick={()=>setRenameFolderKey(activeFolderKey)} style={{background:"#0d1117",color:"#60a5fa",border:"1px solid #21262d",borderRadius:8,padding:"8px 4px",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>✏️ Rename</button>
+                <button onClick={()=>setResetFolderKey(activeFolderKey)} style={{background:"#0d1117",color:"#fbbf24",border:"1px solid #21262d",borderRadius:8,padding:"8px 4px",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>🔄 Reset</button>
+                <button onClick={()=>setDelFolderKey(activeFolderKey)} style={{background:"#0d1117",color:"#f87171",border:"1px solid #21262d",borderRadius:8,padding:"8px 4px",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>🗑️ Delete</button>
             </div>
           </div>
 
