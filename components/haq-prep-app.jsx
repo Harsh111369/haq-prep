@@ -1657,6 +1657,7 @@ export default function App() {
   const [screen, setScreen]           = useState("library");
   const [showJson, setShowJson]       = useState(false);
   const [delKey, setDelKey]           = useState(null);
+  const [resetKey, setResetKey]       = useState(null);
   const [renameKey, setRenameKey]     = useState(null);
   const [shareSet, setShareSet]       = useState(null);
   const [exportSet, setExportSet]     = useState(null);
@@ -1671,6 +1672,7 @@ export default function App() {
   const [showNewFolder, setShowNewFolder]     = useState(false);
   const [renameFolderKey, setRenameFolderKey] = useState(null);
   const [delFolderKey, setDelFolderKey]       = useState(null);
+  const [resetFolderKey, setResetFolderKey]   = useState(null);
   const [moveSetKey, setMoveSetKey]           = useState(null); // set key currently being moved to a folder
   const [toast, setToast]             = useState("");
   const [activeKey, setActiveKey]     = useState(null);
@@ -2101,6 +2103,7 @@ export default function App() {
     Object.entries(newAns).forEach(([id,a]) => {
       if (a.selected !== null) d.att.add(+id);
       if (!a.correct && !a.skipped) d.inc.add(+id);
+      else if (a.correct) d.inc.delete(+id); // answered correctly this round — no longer "needs review"
     });
     persistRev({...(rev||{}), [key]:{bookmarked:[...d.bk],incorrect:[...d.inc],attempted:[...d.att]}});
   }, [rev, getRevData, persistRev]);
@@ -2154,6 +2157,36 @@ export default function App() {
     } else { saveS(LIB_KEY,l); saveS(REV_KEY,r); saveS(SRS_KEY,s); }
     setDelKey(null);
     showToast("🗑️ Set deleted");
+  };
+
+  // Clears bookmark/incorrect/attempted history for one or more sets — the
+  // set itself, its questions, and its score/session analytics are untouched;
+  // only "needs review" tracking resets, as if the set had never been
+  // attempted. Uses cloudDelete (not persistRev's upsert-only save) so the
+  // Firestore doc is actually removed for signed-in users, not left stale.
+  const doResetProgress = async (keys) => {
+    const r = {...(rev||{})};
+    keys.forEach(k => delete r[k]);
+    setRev(r);
+    if (isCloud) {
+      setSyncStatus("syncing");
+      try {
+        await Promise.all(keys.map(k => cloudDelete(user.uid, "revision", k)));
+        setSyncStatus("synced");
+      } catch { setSyncStatus("error"); }
+    } else { saveS(REV_KEY, r); }
+  };
+  const handleResetSet = async () => {
+    if (!resetKey) return;
+    await doResetProgress([resetKey]);
+    setResetKey(null);
+    showToast("🔄 Progress reset — set is now fresh");
+  };
+  const handleResetFolder = async (keys) => {
+    if (!resetFolderKey) return;
+    await doResetProgress(keys);
+    setResetFolderKey(null);
+    showToast(`🔄 Progress reset for ${keys.length} set${keys.length!==1?"s":""}`);
   };
 
   const handleRename = async (newTitle) => {
@@ -2436,6 +2469,9 @@ export default function App() {
             <button onClick={()=>{setActiveSet(set);setActiveKey(key);setTopic("All Topics");setMode("full");setQCount("All");setScreen("home");}} style={{background:"linear-gradient(90deg,#0d9488,#2dd4bf)",color:"#0f172a",border:"none",borderRadius:8,padding:"8px 14px",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Practice →</button>
             <button onClick={()=>setMoveSetKey(key)} style={{background:"#161b22",color:"#fbbf24",border:"none",borderRadius:8,padding:"5px 14px",fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>📁 Move</button>
             <button onClick={()=>setExportSet(set)} style={{background:"#161b22",color:"#2dd4bf",border:"1px solid #2dd4bf30",borderRadius:8,padding:"5px 14px",fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>⬇ Export</button>
+            {(d.bk.size>0 || d.inc.size>0 || d.att.size>0) && (
+              <button onClick={()=>setResetKey(key)} style={{background:"#161b22",color:"#fbbf24",border:"1px solid #fbbf2430",borderRadius:8,padding:"5px 14px",fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>🔄 Reset</button>
+            )}
             <button onClick={()=>setDelKey(key)} style={{background:"#161b22",color:"#f87171",border:"none",borderRadius:8,padding:"5px 14px",fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>🗑️ Delete</button>
           </div>
         </div>
@@ -2591,6 +2627,19 @@ export default function App() {
               <div style={{display:"flex",gap:10}}>
                 <button onClick={()=>setDelKey(null)} style={{flex:1,background:"#161b22",color:"#f1f5f9",border:"none",borderRadius:10,padding:12,fontSize:14,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>Cancel</button>
                 <button onClick={handleDel} style={{flex:1,background:"#f87171",color:"#0f172a",border:"none",borderRadius:10,padding:12,fontSize:14,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Delete</button>
+              </div>
+            </div>
+          </div>
+        )}
+        {resetKey && (
+          <div style={{position:"fixed",inset:0,background:"#000000bb",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+            <div style={{background:"#161b22",borderRadius:16,padding:24,maxWidth:320,width:"100%",border:"1px solid #21262d",textAlign:"center"}}>
+              <div style={{fontSize:32,marginBottom:8}}>🔄</div>
+              <div style={{color:"#f1f5f9",fontSize:16,fontWeight:700,marginBottom:8}}>Reset progress?</div>
+              <p style={{color:"#94a3b8",fontSize:13,marginBottom:20}}>Clears bookmarks, wrong answers, and "needs review" tracking for "{(lib||{})[resetKey]?.title}" — treats it as freshly unattempted. The set, its questions, and your score history stay untouched.</p>
+              <div style={{display:"flex",gap:10}}>
+                <button onClick={()=>setResetKey(null)} style={{flex:1,background:"#161b22",color:"#f1f5f9",border:"none",borderRadius:10,padding:12,fontSize:14,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>Cancel</button>
+                <button onClick={handleResetSet} style={{flex:1,background:"#fbbf24",color:"#0f172a",border:"none",borderRadius:10,padding:12,fontSize:14,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Reset</button>
               </div>
             </div>
           </div>
@@ -2846,6 +2895,32 @@ export default function App() {
             </div>
           </div>
         )}
+        {resetKey && (
+          <div style={{position:"fixed",inset:0,background:"#000000bb",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+            <div style={{background:"#161b22",borderRadius:16,padding:24,maxWidth:320,width:"100%",border:"1px solid #21262d",textAlign:"center"}}>
+              <div style={{fontSize:32,marginBottom:8}}>🔄</div>
+              <div style={{color:"#f1f5f9",fontSize:16,fontWeight:700,marginBottom:8}}>Reset progress?</div>
+              <p style={{color:"#94a3b8",fontSize:13,marginBottom:20}}>Clears bookmarks, wrong answers, and "needs review" tracking for "{(lib||{})[resetKey]?.title}" — treats it as freshly unattempted. The set, its questions, and your score history stay untouched.</p>
+              <div style={{display:"flex",gap:10}}>
+                <button onClick={()=>setResetKey(null)} style={{flex:1,background:"#161b22",color:"#f1f5f9",border:"none",borderRadius:10,padding:12,fontSize:14,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>Cancel</button>
+                <button onClick={handleResetSet} style={{flex:1,background:"#fbbf24",color:"#0f172a",border:"none",borderRadius:10,padding:12,fontSize:14,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Reset</button>
+              </div>
+            </div>
+          </div>
+        )}
+        {resetFolderKey && (
+          <div style={{position:"fixed",inset:0,background:"#000000bb",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+            <div style={{background:"#161b22",borderRadius:16,padding:24,maxWidth:340,width:"100%",border:"1px solid #21262d",textAlign:"center"}}>
+              <div style={{fontSize:32,marginBottom:8}}>🔄</div>
+              <div style={{color:"#f1f5f9",fontSize:16,fontWeight:700,marginBottom:8}}>Reset progress for "{folder.name}"?</div>
+              <p style={{color:"#94a3b8",fontSize:13,marginBottom:20}}>Clears bookmarks, wrong answers, and "needs review" tracking for all {folderSetEntries.length} set{folderSetEntries.length!==1?"s":""} in this folder. Sets, questions, and score history stay untouched.</p>
+              <div style={{display:"flex",gap:10}}>
+                <button onClick={()=>setResetFolderKey(null)} style={{flex:1,background:"#161b22",color:"#f1f5f9",border:"none",borderRadius:10,padding:12,fontSize:14,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>Cancel</button>
+                <button onClick={()=>handleResetFolder(folderSetEntries.map(([k])=>k))} style={{flex:1,background:"#fbbf24",color:"#0f172a",border:"none",borderRadius:10,padding:12,fontSize:14,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Reset All</button>
+              </div>
+            </div>
+          </div>
+        )}
         {toast && <div style={{position:"fixed",top:16,left:"50%",transform:"translateX(-50%)",background:"#0d2a1f",border:"1px solid #166534",borderRadius:10,padding:"10px 18px",color:"#4ade80",fontSize:13,zIndex:300,whiteSpace:"nowrap",boxShadow:"0 4px 20px #00000060"}}>{toast}</div>}
 
         <div style={{maxWidth:580,margin:"0 auto"}}>
@@ -2876,6 +2951,7 @@ export default function App() {
                   document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
                 }} style={{background:"#0d1117",color:"#2dd4bf",border:"1px solid #2dd4bf30",borderRadius:8,padding:"7px 10px",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>⬇ Export</button>
                 <button onClick={()=>setRenameFolderKey(activeFolderKey)} style={{background:"#0d1117",color:"#60a5fa",border:"1px solid #21262d",borderRadius:8,padding:"7px 10px",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>✏️ Rename</button>
+                <button onClick={()=>setResetFolderKey(activeFolderKey)} style={{background:"#0d1117",color:"#fbbf24",border:"1px solid #21262d",borderRadius:8,padding:"7px 10px",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>🔄 Reset</button>
                 <button onClick={()=>setDelFolderKey(activeFolderKey)} style={{background:"#0d1117",color:"#f87171",border:"1px solid #21262d",borderRadius:8,padding:"7px 10px",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>🗑️ Delete</button>
               </div>
             </div>
