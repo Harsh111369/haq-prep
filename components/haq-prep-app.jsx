@@ -2429,6 +2429,11 @@ export default function App() {
       let needCount=0, attCount=0;
       sets.filter(([,s])=>s.folderId===fkey).forEach(([key]) => {
         const d = getRevData(key);
+        if (d.att.size === 0) return; // not-started set — exclude entirely, don't let its
+                                        // wrong/bookmarked counts (which shouldn't exist if
+                                        // truly unattempted, but can from legacy/restored data)
+                                        // inflate the folder numerator without a matching
+                                        // denominator contribution
         needCount += new Set([...d.bk,...d.inc]).size;
         attCount += d.att.size;
       });
@@ -2680,7 +2685,7 @@ export default function App() {
       ? [...gradedFolderSets].sort((a,b) => (GRADE_ORDER[a[3].grade]??5) - (GRADE_ORDER[b[3].grade]??5))
       : gradedFolderSets;
     let folderNeedCount=0, folderAttCount=0;
-    gradedFolderSets.forEach(([,,d]) => { folderNeedCount += new Set([...d.bk,...d.inc]).size; folderAttCount += d.att.size; });
+    gradedFolderSets.forEach(([,,d,g]) => { if (g.grade==="?") return; folderNeedCount += new Set([...d.bk,...d.inc]).size; folderAttCount += d.att.size; });
     const folderPct = folderAttCount>0 ? Math.round(folderNeedCount/folderAttCount*100) : null;
     return (
       <div style={bg}>
