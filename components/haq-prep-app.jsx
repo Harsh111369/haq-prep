@@ -2731,7 +2731,10 @@ export default function App() {
                   <div style={{color:"#64748b",fontSize:10}}>WEAKEST FOLDER</div>
                   <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:8}}>
                     <div style={{color:"#f1f5f9",fontSize:13,fontWeight:700,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",flex:1,minWidth:0}}>📁 {weakestFolder.folder.name}</div>
-                    <div style={{color:"#f87171",fontSize:16,fontWeight:700,flexShrink:0}}>{weakestFolder.pct}%</div>
+                    <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",flexShrink:0}}>
+                      <div style={{color:"#f87171",fontSize:16,fontWeight:700}}>{weakestFolder.pct}%</div>
+                      <div style={{color:"#f8717199",fontSize:8.5,fontWeight:600,letterSpacing:0.3,whiteSpace:"nowrap"}}>NEED REVIEW</div>
+                    </div>
                   </div>
                   <div style={{color:"#fca5a5",fontSize:10.5,marginTop:1}}>{weakestFolder.needCount} of {weakestFolder.attCount} attempted need review</div>
                 </div>
@@ -2743,7 +2746,10 @@ export default function App() {
                   <div style={{color:"#64748b",fontSize:10}}>WEAKEST SET</div>
                   <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:8}}>
                     <div style={{color:"#f1f5f9",fontSize:13,fontWeight:700,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",flex:1,minWidth:0}}>{weakestSet.set.title}</div>
-                    <div style={{color:"#f87171",fontSize:16,fontWeight:700,flexShrink:0}}>{weakestSet.g.problemPct}%</div>
+                    <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",flexShrink:0}}>
+                      <div style={{color:"#f87171",fontSize:16,fontWeight:700}}>{weakestSet.g.problemPct}%</div>
+                      <div style={{color:"#f8717199",fontSize:8.5,fontWeight:600,letterSpacing:0.3,whiteSpace:"nowrap"}}>NEED REVIEW</div>
+                    </div>
                   </div>
                   <div style={{color:"#fca5a5",fontSize:10.5,marginTop:1}}>{new Set([...weakestSet.d.bk,...weakestSet.d.inc]).size} of {weakestSet.d.att.size} attempted need review</div>
                 </div>
