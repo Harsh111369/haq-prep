@@ -10,7 +10,18 @@ HAQ PREP turns static MCQ sets into an adaptive study system — tracking what y
 
 ## Screenshots
 
-`[dashboard screenshot]` · `[quiz/CBT screen]` · `[AI tutor / doubt chat]`
+<table>
+  <tr>
+    <td align="center"><img src="Screenshot_20260704-062154.png" width="250"/><br/><sub><b>Login</b></sub></td>
+    <td align="center"><img src="Screenshot_20260704-062207.png" width="250"/><br/><sub><b>About</b></sub></td>
+    <td align="center"><img src="Screenshot_20260704-062221.png" width="250"/><br/><sub><b>Library / Home</b></sub></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="Screenshot_20260704-062250.png" width="250"/><br/><sub><b>MCQ Generation Prompt</b></sub></td>
+    <td align="center"><img src="Screenshot_20260704-062343.png" width="250"/><br/><sub><b>CBT Mode — Correct</b></sub></td>
+    <td align="center"><img src="Screenshot_20260704-062405.png" width="250"/><br/><sub><b>CBT Mode — Incorrect + AI Help</b></sub></td>
+  </tr>
+</table>
 
 ---
 
