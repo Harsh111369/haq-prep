@@ -1196,6 +1196,18 @@ function JsonModal({ onSave, onClose, folders, defaultFolderId }) {
     e.target.value = ""; // allow re-selecting the same file again later
   };
 
+  // Installed PWAs / Android WebViews can silently truncate very large native
+  // paste-into-textarea events. Reading straight from the clipboard event and
+  // setting state manually avoids that native-paste path entirely.
+  const handleJsonPaste = (e) => {
+    const text = e.clipboardData?.getData("text");
+    if (text != null) {
+      e.preventDefault();
+      setJson(text);
+      setErr("");
+    }
+  };
+
   const doSaveJson = () => {
     setErr("");
     try {
@@ -1243,7 +1255,7 @@ function JsonModal({ onSave, onClose, folders, defaultFolderId }) {
               <input ref={fileRef} type="file" accept=".json" onChange={handleFileUpload} style={{flex:1,background:"#0d1117",border:"1px solid #21262d",borderRadius:10,padding:"10px 12px",color:"#94a3b8",fontSize:12,fontFamily:"inherit",boxSizing:"border-box",cursor:"pointer"}}/>
               <span style={{color:"#475569",fontSize:11,flexShrink:0}}>or paste below</span>
             </div>
-            <textarea value={json} onChange={e=>setJson(e.target.value)} placeholder="Paste your MCQ JSON here…" style={{width:"100%",height:200,background:"#0d1117",border:"1px solid #21262d",borderRadius:10,padding:12,color:"#f1f5f9",fontSize:12,fontFamily:"monospace",resize:"vertical",boxSizing:"border-box",outline:"none",marginBottom:err?8:12}}/>
+            <textarea value={json} onChange={e=>setJson(e.target.value)} onPaste={handleJsonPaste} placeholder="Paste your MCQ JSON here…" style={{width:"100%",height:200,background:"#0d1117",border:"1px solid #21262d",borderRadius:10,padding:12,color:"#f1f5f9",fontSize:12,fontFamily:"monospace",resize:"vertical",boxSizing:"border-box",outline:"none",marginBottom:err?8:12}}/>
             {err && <div style={{background:"#2d0a0a",border:"1px solid #7f1d1d",borderRadius:10,padding:"10px 12px",color:"#fca5a5",fontSize:12,marginBottom:12}}>⚠️ {err}</div>}
             <div style={{display:"flex",gap:10}}>
               <button onClick={onClose} style={{flex:1,background:"#161b22",color:"#f1f5f9",border:"none",borderRadius:10,padding:12,fontSize:14,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>Cancel</button>
