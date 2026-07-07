@@ -1700,7 +1700,11 @@ export default function App() {
     el.textContent = debugLog.join("\n");
   }, [debugLog, debugOn]);
 
-  // ── App state ───────────────────────────────────────────────────────────────
+  // "about" is reachable from two different places: first-run onboarding
+  // (right after picking Guest/Google) and later revisits via the in-app
+  // Guide/About buttons. Back should undo whichever one actually happened,
+  // not always jump into the main app.
+  const aboutFromOnboardingRef = useRef(true);
   const [appScreen, setAppScreen]     = useState("splash");
   const [lib, setLib]                 = useState(null);
   const [rev, setRev]                 = useState(null);
@@ -1886,6 +1890,18 @@ export default function App() {
     if (typeof window === "undefined") return;
     const onPop = () => {
       pushLog(`popstate screen=${screenRef.current} appScreen=${appScreenRef.current} authMode=${authModeRef.current} bootReady=${bootReadyRef.current}`);
+      if (appScreenRef.current === "about") {
+        if (aboutFromOnboardingRef.current) {
+          // Reached via first-run onboarding — back should undo entering
+          // guest/cloud mode and return to the sign-in splash screen.
+          setAuthMode("auth");
+        } else {
+          // Reached later via the in-app Guide/About button — back should
+          // just return to wherever they were in the main app.
+          setAppScreen("app");
+        }
+        return;
+      }
       if (appScreenRef.current !== "app") {
         setAppScreen(prevApp => APP_BACK_PARENT[prevApp] || prevApp);
         return;
@@ -1921,6 +1937,7 @@ export default function App() {
     setLib(l||{}); setRev(r||{}); setSrs(s||{}); setFolders(f||{});
     setAnalytics(a||{sessions:[],totalAttempted:0,totalCorrect:0,totalWrong:0,totalSkipped:0});
     setAuthMode("guest");
+    aboutFromOnboardingRef.current = true;
     setAppScreen("about");
   };
 
@@ -1976,6 +1993,7 @@ export default function App() {
   const enterAppAfterSignIn = () => {
     setAuthError("");
     setAuthMode("cloud");
+    aboutFromOnboardingRef.current = true;
     setAppScreen("about");
   };
 
@@ -2768,7 +2786,7 @@ export default function App() {
               </div>
             </div>
             <div style={{display:"flex",gap:8}}>
-              <button onClick={()=>setAppScreen("about")} style={{flex:1,display:"inline-flex",alignItems:"center",justifyContent:"center",gap:7,background:"#0d1117",border:"1px solid #21262d",borderRadius:10,padding:"9px 10px",cursor:"pointer",fontFamily:"inherit"}}>
+              <button onClick={()=>{aboutFromOnboardingRef.current=false;setAppScreen("about");}} style={{flex:1,display:"inline-flex",alignItems:"center",justifyContent:"center",gap:7,background:"#0d1117",border:"1px solid #21262d",borderRadius:10,padding:"9px 10px",cursor:"pointer",fontFamily:"inherit"}}>
                 <div style={{width:18,height:18,borderRadius:5,display:"flex",alignItems:"center",justifyContent:"center",color:"#64748b",fontSize:13,lineHeight:1}}>‹</div>
                 <span style={{color:"#64748b",fontSize:12,fontWeight:600}}>Back</span>
               </button>
@@ -2903,7 +2921,7 @@ export default function App() {
               </div>
               <div style={{display:"flex",gap:8}}>
                 <button onClick={()=>setShowJson(true)} style={{flex:1,background:"linear-gradient(90deg,#0d9488,#2dd4bf)",color:"#0f172a",border:"none",borderRadius:10,padding:"12px 16px",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>📋 Paste JSON</button>
-                <button onClick={()=>setAppScreen("about")} style={{flex:1,background:"#0d1117",color:"#94a3b8",border:"1px solid #21262d",borderRadius:10,padding:"12px 16px",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>📖 Full Guide</button>
+                <button onClick={()=>{aboutFromOnboardingRef.current=false;setAppScreen("about");}} style={{flex:1,background:"#0d1117",color:"#94a3b8",border:"1px solid #21262d",borderRadius:10,padding:"12px 16px",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>📖 Full Guide</button>
               </div>
             </div>
           )}
