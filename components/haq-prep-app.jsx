@@ -1705,6 +1705,8 @@ export default function App() {
   // Guide/About buttons. Back should undo whichever one actually happened,
   // not always jump into the main app.
   const aboutFromOnboardingRef = useRef(true);
+  const lastLibraryBackRef = useRef(0);
+  const showToastRef = useRef(() => {});
   const [appScreen, setAppScreen]     = useState("splash");
   const [lib, setLib]                 = useState(null);
   const [rev, setRev]                 = useState(null);
@@ -1866,7 +1868,7 @@ export default function App() {
   useEffect(() => {
     if (typeof window === "undefined") return;
     if (authMode === null || authMode === "auth") return;
-    const isRoot = appScreen !== "app" ? !APP_BACK_PARENT[appScreen] : !BACK_PARENT[screen];
+    const isRoot = appScreen !== "app" ? !APP_BACK_PARENT[appScreen] : (!BACK_PARENT[screen] && screen !== "library");
     const hasBuffer = window.history.state && window.history.state.haqBuffer;
     if (!isRoot && !hasBuffer) {
       window.history.pushState({ ...window.history.state, haqBuffer: true }, "");
@@ -1911,6 +1913,18 @@ export default function App() {
         // same way if the user cancels, then ask before actually leaving.
         window.history.pushState({ ...window.history.state, haqBuffer: true }, "");
         setShowExitQuizConfirm(true);
+        return;
+      }
+      if (screenRef.current === "library") {
+        const now = Date.now();
+        if (now - lastLibraryBackRef.current < 2000) {
+          // Second press within the window — don't re-arm the buffer,
+          // let this pop actually exit the app.
+          return;
+        }
+        lastLibraryBackRef.current = now;
+        window.history.pushState({ ...window.history.state, haqBuffer: true }, "");
+        showToastRef.current("Press back again to exit");
         return;
       }
       setScreen(prevScreen => BACK_PARENT[prevScreen] || prevScreen);
@@ -2130,6 +2144,7 @@ export default function App() {
   }, [screen, cur, revealed, qs, ans, bk]);
 
   const showToast = msg => { setToast(msg); setTimeout(()=>setToast(""), 3500); };
+  showToastRef.current = showToast;
 
   const getRevData = useCallback(key => {
     const d = (rev||{})[key] || {};
