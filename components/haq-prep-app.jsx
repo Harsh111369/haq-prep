@@ -1829,6 +1829,10 @@ export default function App() {
   }, [screen, appScreen, authMode]);
 
   // Intercept back navigation: move to the logical parent screen.
+  // While mid-quiz, a hardware back press asks for confirmation instead of
+  // leaving immediately (progress isn't saved, so an accidental press
+  // shouldn't silently discard it).
+  const [showExitQuizConfirm, setShowExitQuizConfirm] = useState(false);
   const appScreenRef = useRef(appScreen);
   const screenRef = useRef(screen);
   appScreenRef.current = appScreen;
@@ -1838,12 +1842,31 @@ export default function App() {
     const onPop = () => {
       if (appScreenRef.current !== "app") {
         setAppScreen(prevApp => APP_BACK_PARENT[prevApp] || prevApp);
-      } else {
-        setScreen(prevScreen => BACK_PARENT[prevScreen] || prevScreen);
+        return;
       }
+      if (screenRef.current === "quiz") {
+        // Re-arm the buffer entry we just consumed so back still works the
+        // same way if the user cancels, then ask before actually leaving.
+        window.history.pushState({ haqBuffer: true }, "");
+        setShowExitQuizConfirm(true);
+        return;
+      }
+      setScreen(prevScreen => BACK_PARENT[prevScreen] || prevScreen);
     };
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
+  }, []);
+
+  // Shared helper for in-app "Back" buttons (chevron buttons, header Back
+  // links, etc). Goes through the real browser back mechanism instead of
+  // setting screen state directly, so the history stack this whole system
+  // depends on never drifts out of sync with what's actually on screen.
+  const goBack = useCallback((fallbackScreen) => {
+    if (typeof window !== "undefined" && window.history.state && window.history.state.haqBuffer) {
+      window.history.back();
+    } else {
+      setScreen(fallbackScreen);
+    }
   }, []);
 
   const enterGuestMode = () => {
@@ -2546,7 +2569,7 @@ export default function App() {
           </div>
         </div>
       )}
-      <AnalyticsScreen analytics={analytics||{}} lib={lib||{}} rev={rev||{}} onRevisionSheet={()=>openRevSheet(analytics,rev,lib)} onBack={()=>setScreen("library")}
+      <AnalyticsScreen analytics={analytics||{}} lib={lib||{}} rev={rev||{}} onRevisionSheet={()=>openRevSheet(analytics,rev,lib)} onBack={()=>goBack("library")}
         onReset={()=>{ const empty={sessions:[],totalAttempted:0,totalCorrect:0,totalWrong:0,totalSkipped:0}; persistAnalytics(empty); showToast("🗑 Analytics reset"); setScreen("library"); }}/>
     </>
   );
@@ -2561,7 +2584,7 @@ export default function App() {
         }}
         onClose={()=>setShowBackup(false)}/>}
       {toast && <div style={{position:"fixed",top:16,left:"50%",transform:"translateX(-50%)",background:"#0d2a1f",border:"1px solid #166534",borderRadius:10,padding:"10px 18px",color:"#4ade80",fontSize:13,zIndex:300,whiteSpace:"nowrap",boxShadow:"0 4px 20px #00000060"}}>{toast}</div>}
-      <SettingsScreen user={user} isCloud={isCloud} setCount={sets.length} onBack={()=>setScreen("library")}
+      <SettingsScreen user={user} isCloud={isCloud} setCount={sets.length} onBack={()=>goBack("library")}
         onOpenBackup={()=>setShowBackup(true)} onSignOut={handleSignOut} onDeleteAll={handleDeleteAllData}/>
     </>
   );
@@ -2943,7 +2966,7 @@ export default function App() {
 
         <div style={{maxWidth:580,margin:"0 auto"}}>
           <div style={{background:"#161b22",borderRadius:16,padding:"18px 20px",marginBottom:16,border:"1px solid #21262d"}}>
-            <button onClick={()=>setScreen("library")} style={{display:"inline-flex",alignItems:"center",gap:7,background:"#0d1117",border:"1px solid #21262d",borderRadius:10,padding:"8px 14px 8px 10px",cursor:"pointer",fontFamily:"inherit",marginBottom:14}}>
+            <button onClick={()=>goBack("library")} style={{display:"inline-flex",alignItems:"center",gap:7,background:"#0d1117",border:"1px solid #21262d",borderRadius:10,padding:"8px 14px 8px 10px",cursor:"pointer",fontFamily:"inherit",marginBottom:14}}>
               <div style={{width:20,height:20,borderRadius:6,background:"#161b22",display:"flex",alignItems:"center",justifyContent:"center",color:"#64748b",fontSize:14,lineHeight:1}}>‹</div>
               <span style={{color:"#64748b",fontSize:12,fontWeight:600}}>Library</span>
             </button>
@@ -3034,7 +3057,7 @@ export default function App() {
     return (
       <div style={{...bg,display:"flex",alignItems:"center",justifyContent:"center"}}>
         <div style={{background:"#161b22",borderRadius:20,padding:28,maxWidth:480,width:"100%",border:"1px solid #21262d"}}>
-          <button onClick={()=>setScreen("library")} style={{display:"inline-flex",alignItems:"center",gap:7,background:"#0d1117",border:"1px solid #21262d",borderRadius:10,padding:"8px 14px 8px 10px",cursor:"pointer",fontFamily:"inherit",marginBottom:18}}>
+          <button onClick={()=>goBack("library")} style={{display:"inline-flex",alignItems:"center",gap:7,background:"#0d1117",border:"1px solid #21262d",borderRadius:10,padding:"8px 14px 8px 10px",cursor:"pointer",fontFamily:"inherit",marginBottom:18}}>
             <div style={{width:20,height:20,borderRadius:6,background:"#161b22",display:"flex",alignItems:"center",justifyContent:"center",color:"#64748b",fontSize:14,lineHeight:1}}>‹</div>
             <span style={{color:"#64748b",fontSize:12,fontWeight:600}}>Library</span>
           </button>
@@ -3216,7 +3239,7 @@ export default function App() {
             <button onClick={()=>setScreen("review")} style={{background:"#161b22",color:"#f1f5f9",border:"none",borderRadius:12,padding:13,fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>📋 Review</button>
             <button onClick={()=>setScreen("home")} style={{background:"#4ade80",color:"#0f172a",border:"none",borderRadius:12,padding:13,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>🔄 Retry</button>
           </div>
-          <button onClick={()=>setScreen("library")} style={{display:"inline-flex",alignItems:"center",justifyContent:"center",gap:7,background:"#161b22",border:"1px solid #21262d",borderRadius:12,padding:"11px 0",fontSize:12,fontWeight:600,cursor:"pointer",width:"100%",fontFamily:"inherit"}}>
+          <button onClick={()=>goBack("library")} style={{display:"inline-flex",alignItems:"center",justifyContent:"center",gap:7,background:"#161b22",border:"1px solid #21262d",borderRadius:12,padding:"11px 0",fontSize:12,fontWeight:600,cursor:"pointer",width:"100%",fontFamily:"inherit"}}>
             <div style={{width:20,height:20,borderRadius:6,background:"#0d1117",display:"flex",alignItems:"center",justifyContent:"center",color:"#64748b",fontSize:14,lineHeight:1}}>‹</div>
             <span style={{color:"#64748b"}}>Library</span>
           </button>
@@ -3234,7 +3257,7 @@ export default function App() {
         <div style={{maxWidth:720,margin:"0 auto"}}>
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:18}}>
             <h2 style={{fontSize:17,margin:0}}>📋 Review</h2>
-            <button onClick={()=>setScreen("result")} style={{display:"inline-flex",alignItems:"center",gap:7,background:"#161b22",border:"1px solid #21262d",borderRadius:10,padding:"8px 14px 8px 10px",cursor:"pointer",fontFamily:"inherit"}}>
+            <button onClick={()=>goBack("result")} style={{display:"inline-flex",alignItems:"center",gap:7,background:"#161b22",border:"1px solid #21262d",borderRadius:10,padding:"8px 14px 8px 10px",cursor:"pointer",fontFamily:"inherit"}}>
               <div style={{width:20,height:20,borderRadius:6,background:"#0d1117",display:"flex",alignItems:"center",justifyContent:"center",color:"#64748b",fontSize:14,lineHeight:1}}>‹</div>
               <span style={{color:"#64748b",fontSize:12,fontWeight:600}}>Back</span>
             </button>
@@ -3281,6 +3304,19 @@ export default function App() {
             <div style={{display:"flex",gap:10}}>
               <button onClick={()=>setShowFinish(false)} style={{flex:1,background:"#161b22",color:"#f1f5f9",border:"none",borderRadius:10,padding:11,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>Go Back</button>
               <button onClick={()=>{setShowFinish(false);finish(ans,bk);}} style={{flex:1,background:"#fbbf24",color:"#0f172a",border:"none",borderRadius:10,padding:11,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Submit</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {showExitQuizConfirm && (
+        <div style={{position:"fixed",inset:0,background:"#000000aa",zIndex:100,display:"flex",alignItems:"center",justifyContent:"center"}}>
+          <div style={{background:"#161b22",borderRadius:16,padding:24,maxWidth:300,width:"90%",border:"1px solid #f8717166",textAlign:"center"}}>
+            <div style={{fontSize:32,marginBottom:8}}>⚠️</div>
+            <div style={{color:"#f1f5f9",fontSize:15,fontWeight:700,marginBottom:8}}>Exit Quiz?</div>
+            <p style={{color:"#94a3b8",fontSize:13,marginBottom:18}}>Your progress on this attempt isn't saved. Leaving now will lose it.</p>
+            <div style={{display:"flex",gap:10}}>
+              <button onClick={()=>setShowExitQuizConfirm(false)} style={{flex:1,background:"#161b22",color:"#f1f5f9",border:"none",borderRadius:10,padding:11,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>Stay</button>
+              <button onClick={()=>{setShowExitQuizConfirm(false);setScreen("library");}} style={{flex:1,background:"#f87171",color:"#0f172a",border:"none",borderRadius:10,padding:11,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Exit</button>
             </div>
           </div>
         </div>
