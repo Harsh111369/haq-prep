@@ -1772,7 +1772,7 @@ export default function App() {
 
   // Remove the #import=... fragment from the address bar without reloading.
   const clearImportHash = () => {
-    try { window.history.replaceState(null, "", window.location.pathname + window.location.search); } catch {}
+    try { window.history.replaceState({ ...window.history.state }, "", window.location.pathname + window.location.search); } catch {}
   };
 
   // Save a shared set straight to local storage (works regardless of auth state).
@@ -1853,7 +1853,7 @@ export default function App() {
   // Seed a base history entry on mount so the first back press is captured.
   useEffect(() => {
     if (typeof window === "undefined") return;
-    window.history.replaceState({ haqRoot: true }, "");
+    window.history.replaceState({ ...window.history.state, haqRoot: true }, "");
   }, []);
 
   // Whenever the app is on a non-root screen, make sure exactly one "buffer"
@@ -1865,7 +1865,7 @@ export default function App() {
     const isRoot = appScreen !== "app" ? !APP_BACK_PARENT[appScreen] : !BACK_PARENT[screen];
     const hasBuffer = window.history.state && window.history.state.haqBuffer;
     if (!isRoot && !hasBuffer) {
-      window.history.pushState({ haqBuffer: true }, "");
+      window.history.pushState({ ...window.history.state, haqBuffer: true }, "");
     }
   }, [screen, appScreen, authMode]);
 
@@ -1893,7 +1893,7 @@ export default function App() {
       if (screenRef.current === "quiz") {
         // Re-arm the buffer entry we just consumed so back still works the
         // same way if the user cancels, then ask before actually leaving.
-        window.history.pushState({ haqBuffer: true }, "");
+        window.history.pushState({ ...window.history.state, haqBuffer: true }, "");
         setShowExitQuizConfirm(true);
         return;
       }
