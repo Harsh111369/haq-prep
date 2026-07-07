@@ -1659,6 +1659,47 @@ export default function App() {
     }
   }, []);
 
+  // ── TEMP DEBUG (remove once back-button issue is diagnosed) ─────────────────
+  // Logs survive a full page reload via sessionStorage, so we can tell whether
+  // pressing phone-back causes a real reload vs. an in-app state change.
+  const debugOn = typeof window !== "undefined" && window.location.search.includes("debug=1");
+  const [debugLog, setDebugLog] = useState(() => {
+    if (typeof window === "undefined") return [];
+    try { return JSON.parse(sessionStorage.getItem("haqDebugLog") || "[]"); } catch { return []; }
+  });
+  const pushLog = useCallback((msg) => {
+    if (typeof window === "undefined") return;
+    setDebugLog(prev => {
+      const next = [...prev.slice(-24), `${new Date().toLocaleTimeString()} ${msg}`];
+      try { sessionStorage.setItem("haqDebugLog", JSON.stringify(next)); } catch {}
+      return next;
+    });
+  }, []);
+  useEffect(() => {
+    if (typeof window === "undefined" || !debugOn) return;
+    pushLog("MOUNT (fresh JS load — state reset)");
+    const onPageShow = (e) => pushLog(`pageshow persisted=${e.persisted}`);
+    const onVis = () => pushLog(`visibility=${document.visibilityState}`);
+    window.addEventListener("pageshow", onPageShow);
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      window.removeEventListener("pageshow", onPageShow);
+      document.removeEventListener("visibilitychange", onVis);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !debugOn) return;
+    let el = document.getElementById("haq-debug-overlay");
+    if (!el) {
+      el = document.createElement("div");
+      el.id = "haq-debug-overlay";
+      el.style.cssText = "position:fixed;bottom:0;left:0;right:0;max-height:45vh;overflow-y:auto;background:#000000ee;color:#4ade80;font-size:10px;font-family:monospace;padding:8px;z-index:999999;white-space:pre-wrap;pointer-events:auto;";
+      document.body.appendChild(el);
+    }
+    el.textContent = debugLog.join("\n");
+  }, [debugLog, debugOn]);
+
   // ── App state ───────────────────────────────────────────────────────────────
   const [appScreen, setAppScreen]     = useState("splash");
   const [lib, setLib]                 = useState(null);
@@ -1835,11 +1876,16 @@ export default function App() {
   const [showExitQuizConfirm, setShowExitQuizConfirm] = useState(false);
   const appScreenRef = useRef(appScreen);
   const screenRef = useRef(screen);
+  const authModeRef = useRef(authMode);
+  const bootReadyRef = useRef(bootReady);
   appScreenRef.current = appScreen;
   screenRef.current = screen;
+  authModeRef.current = authMode;
+  bootReadyRef.current = bootReady;
   useEffect(() => {
     if (typeof window === "undefined") return;
     const onPop = () => {
+      pushLog(`popstate screen=${screenRef.current} appScreen=${appScreenRef.current} authMode=${authModeRef.current} bootReady=${bootReadyRef.current}`);
       if (appScreenRef.current !== "app") {
         setAppScreen(prevApp => APP_BACK_PARENT[prevApp] || prevApp);
         return;
